@@ -1,0 +1,16 @@
+build:
+  # Default build configuration
+  defaultConfiguration: Development Editor
+
+  # Debug keywords (switch to Debug Editor when these appear in user prompt)
+  debugKeywords:
+    - debug
+    - debugging
+    - Debug
+    - 调试
+
+  # Target platform
+  platform: Win64
+
+  # Build timeout (minutes)
+  timeoutMinutes: 30
