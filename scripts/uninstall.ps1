@@ -8,7 +8,7 @@
     AI assistant's skills directory.
 
 .PARAMETER Assistant
-    Target AI assistant: claude, opencode, codex, or all (default).
+    Target AI assistant: claude, opencode, codex, kimi, or all (default).
 
 .PARAMETER Force
     Skip confirmation prompt.
@@ -23,7 +23,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet("claude","opencode","codex","all")]
+    [ValidateSet("claude","opencode","codex","kimi","all")]
     [string]$Assistant = "all",
 
     [switch]$Force
@@ -40,6 +40,7 @@ $configs = @{
     claude   = @{ Name = "Claude Code"; Path = Join-Path $env:USERPROFILE ".claude\skills" }
     opencode = @{ Name = "OpenCode";    Path = Join-Path $env:USERPROFILE ".opencode\skills" }
     codex    = @{ Name = "Codex";       Path = Join-Path $env:USERPROFILE ".codex\skills" }
+    kimi     = @{ Name = "Kimi Code";   Path = Join-Path $env:USERPROFILE ".kimi\skills" }
 }
 
 # ---- Validate source ----
@@ -55,7 +56,7 @@ if ($skills.Count -eq 0) {
 }
 
 # ---- Determine targets ----
-$targets = if ($Assistant -eq "all") { @("claude","opencode","codex") } else { @($Assistant) }
+$targets = if ($Assistant -eq "all") { @("claude","opencode","codex","kimi") } else { @($Assistant) }
 $toRemove = @()
 
 foreach ($key in $targets) {

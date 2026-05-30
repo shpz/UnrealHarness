@@ -5,11 +5,11 @@
 
 .DESCRIPTION
     Scans the project skills/ folder and copies or symlinks each skill
-to the target AI assistant's skills directory.
-Supports Claude Code, OpenCode, and Codex.
+    to the target AI assistant's skills directory.
+    Supports Claude Code, OpenCode, Codex, and Kimi Code.
 
 .PARAMETER Assistant
-    Target AI assistant: claude, opencode, codex, or all (default).
+    Target AI assistant: claude, opencode, codex, kimi, or all (default).
 
 .PARAMETER Link
     Create symbolic links instead of copying files. Useful for development.
@@ -27,7 +27,7 @@ Supports Claude Code, OpenCode, and Codex.
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet("claude","opencode","codex","all")]
+    [ValidateSet("claude","opencode","codex","kimi","all")]
     [string]$Assistant = "all",
 
     [switch]$Link,
@@ -46,6 +46,7 @@ $configs = @{
     claude   = @{ Name = "Claude Code"; Path = Join-Path $env:USERPROFILE ".claude\skills" }
     opencode = @{ Name = "OpenCode";    Path = Join-Path $env:USERPROFILE ".opencode\skills" }
     codex    = @{ Name = "Codex";       Path = Join-Path $env:USERPROFILE ".codex\skills" }
+    kimi     = @{ Name = "Kimi Code";   Path = Join-Path $env:USERPROFILE ".kimi\skills" }
 }
 
 # ---- Validate source ----
@@ -65,7 +66,7 @@ $skills | ForEach-Object { Write-Host "  - $($_.Name)" }
 Write-Host ""
 
 # ---- Install ----
-$targets = if ($Assistant -eq "all") { @("claude","opencode","codex") } else { @($Assistant) }
+$targets = if ($Assistant -eq "all") { @("claude","opencode","codex","kimi") } else { @($Assistant) }
 $installedAny = $false
 
 foreach ($key in $targets) {
