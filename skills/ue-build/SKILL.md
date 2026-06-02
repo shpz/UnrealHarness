@@ -15,15 +15,6 @@ description: >
 
 通过 UnrealBuildTool (UBT) 编译 Unreal Engine 5 C++ 项目。
 
-## 何时使用
-
-- 用户想要编译或构建 UE5 项目
-- 用户在 UE5 上下文中提到"编译"、"build"、"compile"
-
-## 前置条件
-
-项目目录必须包含 `.uproject` 文件。如果当前目录没有，向用户询问正确的项目路径。
-
 ## 执行流程
 
 ### 步骤 1：确认项目路径
@@ -39,8 +30,8 @@ description: >
 
 | 提示词包含 | 配置 |
 |-----------|------|
-| （默认） | Development Editor |
-| "debug"、"debugging"、"Debug"、"调试" | Debug Editor |
+| （默认） | Development |
+| "debug"、"debugging"、"Debug"、"调试" | Debug |
 
 ### 步骤 3：调用编译脚本
 
@@ -77,9 +68,3 @@ powershell -File "<skill-root>/build.ps1" -ProjectPath "<项目路径>" -Configu
 - **成功**：告知用户编译配置和成功状态
 - **编译错误**：呈现 UBT 原始错误输出，帮助用户定位问题
 - **偶发性错误重试后仍失败**：告知用户可能的外部环境问题（如文件锁）
-
-## 限制
-
-- 仅支持 Windows (Win64) 平台
-- 仅执行编译，不自动修复任何代码错误
-- 需要安装 Epic Games Launcher 或正确注册源码编译的引擎

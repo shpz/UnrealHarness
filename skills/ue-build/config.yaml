@@ -1,6 +1,6 @@
 build:
   # Default build configuration
-  defaultConfiguration: Development Editor
+  defaultConfiguration: Development
 
   # Debug keywords (switch to Debug Editor when these appear in user prompt)
   debugKeywords:
