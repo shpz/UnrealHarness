@@ -1,113 +1,150 @@
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Compile Unreal Engine 5 C++ project (single-shot, no retry, no fix)
-
+    通用 Unreal Engine 5 项目编译脚本
 .DESCRIPTION
-    Execute a single UBT compilation. Requires -EnginePath to be provided.
-    stdout/stderr pass through as-is, return exit code.
-
+    自动检测项目文件、解析引擎路径并编译 UE5 C++ 项目
+    支持 Launcher 安装和源码编译引擎
 .PARAMETER ProjectPath
-    Project root directory (must contain .uproject file). Defaults to current directory.
-
+    .uproject 文件路径（可选，默认自动检测当前目录）
 .PARAMETER Configuration
-    Build compilation. Defaults to "Development Editor".
-
+    编译配置: Development (默认), Debug, Shipping, Test
 .PARAMETER Platform
-    Target platform. Defaults to "Win64".
-
-.PARAMETER EnginePath
-    Engine root directory (required). Use find-engine.ps1 to locate it before calling this script.
+    目标平台: Win64 (默认)
+.EXAMPLE
+    .\build.ps1
+    .\build.ps1 -Configuration Debug
+    .\build.ps1 -ProjectPath "D:\Projects\MyGame\MyGame.uproject"
 #>
-[CmdletBinding()]
 param(
-    [string]$ProjectPath = $PWD,
-    [string]$Configuration = "Development Editor",
-    [string]$Platform = "Win64",
-    [string]$EnginePath = ""
+    [string]$ProjectPath = "",
+
+    [ValidateSet("Development", "Debug", "Shipping", "Test")]
+    [string]$Configuration = "Development",
+
+    [ValidateSet("Win64")]
+    [string]$Platform = "Win64"
 )
 
 $ErrorActionPreference = "Stop"
 
-# ---- UTF-8 encoding output ----
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
+# ============================================
+# 1. 项目发现
+# ============================================
+function Find-ProjectFile {
+    param([string]$ExplicitPath)
 
-# 1. Validate project path
-$resolvedPath = Resolve-Path $ProjectPath -ErrorAction SilentlyContinue
-if (-not $resolvedPath) {
-    Write-Error "Project path does not exist: $ProjectPath"
+    if ($ExplicitPath -and (Test-Path $ExplicitPath)) {
+        return (Resolve-Path $ExplicitPath).Path
+    }
+
+    $uprojectFiles = Get-ChildItem -Path "." -Filter "*.uproject" -File
+
+    if ($uprojectFiles.Count -eq 0) {
+        Write-Error "当前目录未找到 .uproject 文件。请提供项目路径: -ProjectPath `"路径\项目.uproject`""
+        exit 1
+    }
+
+    if ($uprojectFiles.Count -eq 1) {
+        return $uprojectFiles[0].FullName
+    }
+
+    # 多个项目，列出供选择
+    Write-Host "发现多个 UE5 项目:" -ForegroundColor Yellow
+    for ($i = 0; $i -lt $uprojectFiles.Count; $i++) {
+        Write-Host "  [$i] $($uprojectFiles[$i].Name)" -ForegroundColor Cyan
+    }
+    Write-Host "请使用 -ProjectPath 参数指定要编译的项目" -ForegroundColor Yellow
     exit 1
 }
 
-# 2. Find .uproject file
-$uprojectFiles = Get-ChildItem -Path $resolvedPath -Filter "*.uproject" -File
-if ($uprojectFiles.Count -eq 0) {
-    Write-Error "No .uproject file found in '$resolvedPath'"
+# ============================================
+# 2. 引擎路径解析
+# ============================================
+function Resolve-EnginePath {
+    param([string]$ProjectFile)
+
+    # 读取 .uproject 的 EngineAssociation
+    $uprojectContent = Get-Content $ProjectFile -Raw | ConvertFrom-Json
+    $engineAssociation = $uprojectContent.EngineAssociation
+
+    if (-not $engineAssociation) {
+        Write-Error "无法从 .uproject 读取 EngineAssociation 字段"
+        exit 1
+    }
+
+    $enginePath = $null
+
+    # 判断是版本号还是 GUID
+    if ($engineAssociation -match '^\d+\.\d+$') {
+        # Launcher 安装的引擎: 从注册表读取
+        $regPath = "HKLM:\SOFTWARE\EpicGames\Unreal Engine\$engineAssociation"
+        try {
+            $enginePath = (Get-ItemProperty -Path $regPath -ErrorAction Stop).InstalledDirectory
+        } catch {
+            Write-Error "未找到 UE $engineAssociation 的注册表项。请确认已通过 Epic Games Launcher 安装。"
+            exit 1
+        }
+    } else {
+        # 源码编译引擎: GUID 格式
+        $regPath = "HKCU:\SOFTWARE\Epic Games\Unreal Engine\Builds\$engineAssociation"
+        try {
+            $enginePath = (Get-ItemProperty -Path $regPath -ErrorAction Stop).Path
+        } catch {
+            Write-Error "未找到源码编译引擎的注册表项。请确认引擎已正确注册。"
+            exit 1
+        }
+    }
+
+    if (-not (Test-Path $enginePath)) {
+        Write-Error "引擎路径不存在: $enginePath"
+        exit 1
+    }
+
+    return $enginePath
+}
+
+# ============================================
+# 3. Target 推导
+# ============================================
+function Get-BuildTarget {
+    param([string]$ProjectFile)
+
+    $projectName = [System.IO.Path]::GetFileNameWithoutExtension($ProjectFile)
+    return "${projectName}Editor"
+}
+
+# ============================================
+# 主流程
+# ============================================
+$projectFile = Find-ProjectFile -ExplicitPath $ProjectPath
+$enginePath = Resolve-EnginePath -ProjectFile $projectFile
+$target = Get-BuildTarget -ProjectFile $projectFile
+
+$buildBat = Join-Path $enginePath "Engine\Build\BatchFiles\Build.bat"
+if (-not (Test-Path $buildBat)) {
+    Write-Error "未找到 Build.bat: $buildBat"
     exit 1
 }
-if ($uprojectFiles.Count -gt 1) {
-    Write-Error "Multiple .uproject files found in '$resolvedPath'. Please ensure only one project file exists."
-    exit 1
+
+Write-Host "============================================" -ForegroundColor Cyan
+Write-Host "Unreal Engine 5 项目编译" -ForegroundColor Cyan
+Write-Host "============================================" -ForegroundColor Cyan
+Write-Host "项目: $projectFile"
+Write-Host "目标: $target"
+Write-Host "平台: $Platform"
+Write-Host "配置: $Configuration"
+Write-Host "引擎: $enginePath"
+Write-Host "============================================" -ForegroundColor Cyan
+
+# 执行编译
+& $buildBat $target $Platform $Configuration "$projectFile" -waitmutex
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "编译失败，退出码: $LASTEXITCODE"
+    exit $LASTEXITCODE
 }
 
-$uprojectFile = $uprojectFiles[0]
-$projectName = [System.IO.Path]::GetFileNameWithoutExtension($uprojectFile.Name)
-
-# 3. Resolve UBT path from EnginePath
-if (-not $EnginePath) {
-    Write-Error "EnginePath is required. Use find-engine.ps1 to locate the engine before calling build.ps1."
-    exit 1
-}
-
-# UE5.4+ UBT path changed: Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe
-$ubtPathNew = Join-Path $EnginePath "Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe"
-$ubtPathLegacy = Join-Path $EnginePath "Engine\Binaries\DotNET\UnrealBuildTool.exe"
-
-$ubtPath = $null
-if (Test-Path $ubtPathNew) {
-    $ubtPath = $ubtPathNew
-} elseif (Test-Path $ubtPathLegacy) {
-    $ubtPath = $ubtPathLegacy
-} else {
-    Write-Error "UnrealBuildTool.exe not found at expected paths:`n  - $ubtPathNew`n  - $ubtPathLegacy"
-    exit 1
-}
-
-# 4. Parse "Development Editor" / "Debug Editor" into UBT-compatible Target and Configuration
-# UBT expects: <TargetName> <Platform> <Configuration>
-# "Editor" is part of TargetName, NOT Configuration
-$ubtTarget = $projectName
-$ubtConfiguration = "Development"
-
-if ($Configuration -match "Editor") {
-    $ubtTarget = "${projectName}Editor"
-}
-if ($Configuration -match "Debug") {
-    $ubtConfiguration = "Debug"
-} elseif ($Configuration -match "Development") {
-    $ubtConfiguration = "Development"
-} elseif ($Configuration -match "Shipping") {
-    $ubtConfiguration = "Shipping"
-} elseif ($Configuration -match "Test") {
-    $ubtConfiguration = "Test"
-}
-
-# 5. Assemble and execute UBT command
-# Use separate array elements for -Project and path to handle spaces correctly
-$ubtArgs = @(
-    $ubtTarget,
-    $ubtConfiguration,
-    $Platform,
-    "-Project",
-    $uprojectFile.FullName
-)
-
-Write-Host "Project: $($uprojectFile.FullName)"
-Write-Host "Target: $ubtTarget"
-Write-Host "Configuration: $ubtConfiguration"
-Write-Host "Platform: $Platform"
-Write-Host "UBT: $ubtPath"
-Write-Host ""
-
-$process = Start-Process -FilePath $ubtPath -ArgumentList $ubtArgs -NoNewWindow -Wait -PassThru
-exit $process.ExitCode
+Write-Host "============================================" -ForegroundColor Green
+Write-Host "编译成功!" -ForegroundColor Green
+Write-Host "============================================" -ForegroundColor Green
