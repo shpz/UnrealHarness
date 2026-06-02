@@ -28,7 +28,10 @@ description: >
 
 ### 步骤 1：确认项目路径
 
-检查当前工作目录中是否有 `.uproject` 文件。如果没有，提示用户提供项目路径。
+检查当前工作目录中是否有 `.uproject` 文件：
+- 单个 → 自动使用
+- 多个 → 提示用户指定
+- 无 → 询问项目路径
 
 ### 步骤 2：确定编译配置
 
@@ -39,36 +42,26 @@ description: >
 | （默认） | Development Editor |
 | "debug"、"debugging"、"Debug"、"调试" | Debug Editor |
 
-### 步骤 3：查找引擎路径
+### 步骤 3：调用编译脚本
 
-先调用 `find-engine.ps1` 自动查找引擎：
-
-```bash
-powershell -File "<skill-root>/find-engine.ps1" -ProjectPath "<项目路径>"
-```
-
-**如果找到引擎**：记录引擎路径，传给 `build.ps1`。
-
-**如果未找到引擎**：
-1. 向用户说明：无法自动找到与项目关联的 Unreal Engine
-2. 询问用户引擎安装路径（例如 `C:\Program Files\Epic Games\UE_5.4`）
-3. 用户确认路径后，传给 `build.ps1`
-
-### 步骤 4：调用编译脚本
-
-执行 PowerShell 脚本，传入引擎路径：
+执行 PowerShell 脚本：
 
 ```bash
-powershell -File "<skill-root>/build.ps1" -ProjectPath "<项目路径>" -Configuration "<配置>" -EnginePath "<引擎路径>"
+powershell -File "<skill-root>/build.ps1" -ProjectPath "<项目路径>" -Configuration "<配置>"
 ```
 
-### 步骤 5：检查执行结果
+脚本会自动：
+- 从 `.uproject` 的 `EngineAssociation` 解析引擎路径
+- 推导 Target 名称（`项目名Editor`）
+- 调用 UBT 执行编译
+
+### 步骤 4：检查执行结果
 
 脚本返回 exit code：
 - **0**：编译成功，向用户确认
 - **非 0**：编译失败，分析 stderr/stdout 判断错误类型
 
-### 步骤 6：失败类型判断与重试（Agent 层）
+### 步骤 5：失败类型判断与重试（Agent 层）
 
 | 错误特征 | 处理方式 |
 |---------|---------|
@@ -79,7 +72,7 @@ powershell -File "<skill-root>/build.ps1" -ProjectPath "<项目路径>" -Configu
 
 **最大重试次数：3 次**。每次重试用相同的参数重新调用 `build.ps1`。
 
-### 步骤 7：反馈结果
+### 步骤 6：反馈结果
 
 - **成功**：告知用户编译配置和成功状态
 - **编译错误**：呈现 UBT 原始错误输出，帮助用户定位问题
@@ -90,12 +83,3 @@ powershell -File "<skill-root>/build.ps1" -ProjectPath "<项目路径>" -Configu
 - 仅支持 Windows (Win64) 平台
 - 仅执行编译，不自动修复任何代码错误
 - 需要安装 Epic Games Launcher 或正确注册源码编译的引擎
-
-## 脚本参考
-
-| 文件 | 用途 |
-|------|------|
-| `find-engine.ps1` | 查找引擎 — 从 .uproject 和注册表定位引擎安装目录 |
-| `build.ps1` | 编译入口 — 需要传入 -EnginePath |
-
-`find-engine.ps1` 可独立运行用于调试。`build.ps1` 是编译的唯一入口。
