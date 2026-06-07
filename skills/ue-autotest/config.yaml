@@ -1,0 +1,33 @@
+---
+# Test module auto-discovery pattern
+testModulePattern: "Source/*Test/*.Build.cs"
+
+# Map module names to test categories for report grouping
+moduleCategories:
+  CoreGameplayTest: "unit"
+  FeatureIntegrationTest: "integration"
+  PerformanceTest: "performance"
+
+# Execution timeouts
+editorTimeoutSeconds: 600
+singleTestTimeoutSeconds: 120
+
+# Report output
+reportOutputDir: "Saved/Automation/Reports"
+reportFormat: "markdown"
+
+# Editor command-line arguments (always applied)
+editorExtraArgs:
+  - "-unattended"
+  - "-nopause"
+  - "-nosplash"
+  - "-log"
+
+# Log parsing regex patterns (customizable per UE version)
+logPatterns:
+  testStart: 'LogAutomationController:.*Running Tests'
+  testPassed: 'LogAutomationController:\s+(.+?)\s+passed\s*\(([^)]+)\)'
+  testFailed: 'LogAutomationController:\s+(.+?)\s+failed'
+  testError: 'LogAutomationController:\s*Error:\s*(.+)'
+  summaryLine: 'LogAutomationController:\s*(\d+)\s+tests run.*?(\d+)\s+passed.*?(\d+)\s+failed'
+
