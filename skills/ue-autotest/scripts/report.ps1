@@ -151,7 +151,7 @@ function Format-ModuleSection {
 function Format-FailedTests {
     param([array]$Tests)
 
-    $failedTests = $Tests | Where-Object { -not $_.passed }
+    $failedTests = @($Tests | Where-Object { -not $_.passed })
     if ($failedTests.Count -eq 0) { return "" }
 
     $md = @()
@@ -176,7 +176,7 @@ function Format-FailedTests {
 function Format-PassedTests {
     param([array]$Tests)
 
-    $passedTests = $Tests | Where-Object { $_.passed }
+    $passedTests = @($Tests | Where-Object { $_.passed })
     if ($passedTests.Count -eq 0) { return "" }
 
     $md = @()

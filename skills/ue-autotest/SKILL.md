@@ -96,9 +96,9 @@ powershell -File "<skill-root>/scripts/autotest.ps1" -ProjectPath "<项目目录
 脚本会自动：
 - 扫描 `Source/*Test/` 目录发现测试模块
 - 调用 `../ue-build/build.ps1` 编译项目
-- 启动 `UnrealEditor-Cmd.exe` / `UE4Editor-Cmd.exe` 无头运行测试
+- 启动 `UnrealEditor-Cmd.exe` 无头运行测试
 - 默认追加 `-nullrhi`、`-TestExit="Automation Test Queue Empty"` 和 `-ReportExportPath="Saved\Automation\Reports\Raw\<Module>"`
-- 优先解析 `Saved/Automation/Reports/Raw/<Module>/index.json` 获取结果；缺少原生报告时回退解析 `Saved/Logs/UnrealEditor-Cmd.log` 或 `Saved/Logs/UE4Editor-Cmd.log`
+- 优先解析 `Saved/Automation/Reports/Raw/<Module>/index.json` 获取结果；缺少原生报告时回退解析 `Saved/Logs/UnrealEditor-Cmd.log`
 - 生成 `Saved/Automation/autotest_results.json`
 - 调用 `report.ps1` 生成 Markdown 报告
 

@@ -3,7 +3,7 @@
 .SYNOPSIS
     UE5 Automation Test Runner
 .DESCRIPTION
-    Scans test modules, builds project via ue-build, runs tests via UE4Editor-Cmd,
+    Scans test modules, builds project via ue-build, runs tests via UnrealEditor-Cmd,
     parses logs, and outputs structured results.
 .PARAMETER ProjectPath
     Path to project directory or .uproject file (optional, auto-detects)
@@ -121,6 +121,7 @@ function Test-ScopeMatchesPrefix {
     if ($normalizedScope -eq $normalizedPrefix) { return $true }
     if ($normalizedScope -eq ($normalizedPrefix.Split('.')[0])) { return $true }
     if ($normalizedPrefix.StartsWith("$normalizedScope.")) { return $true }
+    if ($normalizedScope.StartsWith("$normalizedPrefix.")) { return $true }
     return $false
 }
 
@@ -232,18 +233,8 @@ function Invoke-Build {
     Write-Host "Building project..." -ForegroundColor Cyan
     Write-Host "============================================" -ForegroundColor Cyan
 
-    $projectDir = Split-Path $ProjectFile -Parent
-    $findEngineScript = Join-Path $skillRoot "..\ue-build\find-engine.ps1"
-    if (-not (Test-Path $findEngineScript)) {
-        throw "ue-build find-engine script not found: $findEngineScript"
-    }
-
-    $enginePath = (& powershell -File "$findEngineScript" -ProjectPath "$projectDir") | Select-Object -Last 1
-    if ($LASTEXITCODE -ne 0 -or -not $enginePath) {
-        throw "Engine discovery failed with exit code $LASTEXITCODE."
-    }
-
-    $buildOutput = & powershell -File "$buildScript" -ProjectPath "$projectDir" -Configuration "$Configuration Editor" -EnginePath "$enginePath"
+    $enginePath = Resolve-EnginePath -ProjectFile $ProjectFile
+    $buildOutput = & powershell -File "$buildScript" -ProjectPath "$ProjectFile" -Configuration "$Configuration"
     foreach ($line in $buildOutput) {
         Write-Host $line
     }
@@ -305,6 +296,17 @@ function Resolve-EnginePath {
     return $enginePath
 }
 
+function Resolve-EditorCmd {
+    param([string]$EnginePath)
+
+    $editorCmd = Join-Path $EnginePath "Engine\Binaries\Win64\UnrealEditor-Cmd.exe"
+    if (Test-Path $editorCmd) {
+        return $editorCmd
+    }
+
+    throw "UnrealEditor-Cmd.exe not found: $editorCmd"
+}
+
 # ============================================
 # 8. Run Tests for a Module
 # ============================================
@@ -318,14 +320,7 @@ function Run-Tests {
         [switch]$NoNullRHI
     )
 
-    $editorCmd = Join-Path $EnginePath "Engine\Binaries\Win64\UE4Editor-Cmd.exe"
-    if (-not (Test-Path $editorCmd)) {
-        # Try UE5 naming
-        $editorCmd = Join-Path $EnginePath "Engine\Binaries\Win64\UnrealEditor-Cmd.exe"
-    }
-    if (-not (Test-Path $editorCmd)) {
-        throw "Editor-Cmd not found. Tried UE4Editor-Cmd.exe and UnrealEditor-Cmd.exe"
-    }
+    $editorCmd = Resolve-EditorCmd -EnginePath $EnginePath
 
     $projectDir = Split-Path $ProjectFile -Parent
     $automationDir = Join-Path $projectDir "Saved\Automation"
@@ -404,7 +399,7 @@ function Resolve-AutomationLogFile {
         return $PreferredLogFile
     }
 
-    $patterns = @("$ProjectName*.log", "UnrealEditor*.log", "UE4Editor*.log")
+    $patterns = @("$ProjectName*.log", "UnrealEditor*.log")
     foreach ($pattern in $patterns) {
         $candidate = Get-ChildItem -LiteralPath $LogsDir -Filter $pattern -File -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending |
