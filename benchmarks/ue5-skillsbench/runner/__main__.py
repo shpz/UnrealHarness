@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from .adapter import CodexAdapter, ManualAdapter, NoopAdapter, OracleAdapter
+from .adapter import CodexAdapter, KimiCodeAdapter, ManualAdapter, NoopAdapter, OracleAdapter
 from .config import BenchmarkConfig, ConditionConfig, discover_tasks, load_benchmark_yaml
 from .metrics import capture_git_diff, diff_metrics, git_add_untracked
 from .preflight import run_preflight
@@ -124,6 +124,8 @@ def cmd_run_single(args: argparse.Namespace) -> int:
         adapter = ManualAdapter()
     elif adapter_name == "noop":
         adapter = NoopAdapter()
+    elif adapter_name == "kimi-code":
+        adapter = KimiCodeAdapter()
     elif adapter_name == "codex":
         adapter = CodexAdapter()
     else:
@@ -266,7 +268,7 @@ def main() -> int:
     p = sub.add_parser("run-single", help="Run a single trial")
     p.add_argument("--task-id", required=True)
     p.add_argument("--condition", required=True)
-    p.add_argument("--adapter", choices=["oracle", "manual", "noop", "codex"], required=True)
+    p.add_argument("--adapter", choices=["oracle", "manual", "noop", "codex", "kimi-code"], required=True)
     p.add_argument("--trial", type=int, default=1)
     p.add_argument("--run-id", default=None)
     p.add_argument("--skip-preflight", action="store_true")
@@ -275,7 +277,7 @@ def main() -> int:
     p.set_defaults(func=cmd_run_single)
 
     p = sub.add_parser("run-matrix", help="Run full task/condition/trial matrix")
-    p.add_argument("--adapter", choices=["oracle", "manual", "noop", "codex"], required=True)
+    p.add_argument("--adapter", choices=["oracle", "manual", "noop", "codex", "kimi-code"], required=True)
     p.add_argument("--run-id", default=None)
     p.set_defaults(func=cmd_run_matrix)
 

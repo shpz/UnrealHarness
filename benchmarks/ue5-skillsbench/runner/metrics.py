@@ -21,10 +21,12 @@ def capture_git_diff(project_path: Path, diff_path: Path) -> None:
         cwd=str(project_path),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if result.returncode != 0:
         raise RuntimeError(f"git diff failed: {result.stderr}")
-    diff_path.write_text(result.stdout, encoding="utf-8")
+    diff_path.write_text(result.stdout or "", encoding="utf-8")
 
 
 def diff_metrics(project_path: Path) -> dict:

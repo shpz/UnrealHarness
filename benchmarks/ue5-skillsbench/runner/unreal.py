@@ -2,11 +2,20 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import stat
 import subprocess
 import time
 from pathlib import Path
 from typing import Optional
+
+
+def _remove_readonly(func, path, exc_info):
+    """shutil.rmtree onexc handler to remove read-only files on Windows."""
+    if os.path.exists(path):
+        os.chmod(path, stat.S_IWUSR)
+        func(path)
 
 
 class EnginePaths:
@@ -94,7 +103,7 @@ def invoke_build(
         for d in ["Intermediate", "Binaries"]:
             p = project_path / d
             if p.exists():
-                shutil.rmtree(p, ignore_errors=True)
+                shutil.rmtree(p, onexc=_remove_readonly)
 
     parent_log = build_log_path.parent if build_log_path else project_path / "Saved" / "Logs"
     parent_log.mkdir(parents=True, exist_ok=True)
