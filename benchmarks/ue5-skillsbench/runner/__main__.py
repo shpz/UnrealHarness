@@ -188,8 +188,8 @@ def cmd_run_single(args: argparse.Namespace) -> int:
         "overall_passed": overall_passed,
         "failure_class": failure_class,
         "metrics": {
-            "wall_clock_seconds": round(adapter_result.adapter_wall_seconds + (verifier_result["verifier_result"] or {}).get("build", {}).get("duration_seconds", 0), 3),
-            "build_duration_seconds": (verifier_result["verifier_result"] or {}).get("build", {}).get("duration_seconds"),
+            "wall_clock_seconds": round(adapter_result.adapter_wall_seconds + ((verifier_result["verifier_result"] or {}).get("build") or {}).get("duration_seconds", 0), 3),
+            "build_duration_seconds": ((verifier_result["verifier_result"] or {}).get("build") or {}).get("duration_seconds"),
             "files_changed": diff_metrics_result["files_changed"],
             "lines_added": diff_metrics_result["lines_added"],
             "lines_deleted": diff_metrics_result["lines_deleted"],
