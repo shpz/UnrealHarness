@@ -1,0 +1,10 @@
+id = "tps-env-build-smoke"
+project = "TPSample"
+timeout_minutes = 30
+primary_skills = ["ue-build"]
+
+[metadata]
+difficulty = "easy"
+category = "software-engineering"
+subcategory = "build-smoke"
+tags = ["unreal-engine", "ue5", "ubt", "smoke"]
