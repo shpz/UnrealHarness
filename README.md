@@ -2,13 +2,26 @@
 
 [English](README_EN.md)
 
-为编程智能体打造的虚幻引擎 Harness 套件。
+为编程智能体打造的虚幻引擎 Harness & Benchmark 套件。
 
-让你的编程智能体狂奔在笔直的高速公路上。
+让你的编程智能体狂奔在笔直的高速公路上，同时提供标准化的 Benchmark 来评估其能力。
 
 兼容 Claude Code、OpenCode、Codex、Kimi Code 等支持 skill 的编程智能体。
 
-## 安装
+## 仓库结构
+
+| 目录 | 说明 |
+|------|------|
+| `skills/` | Harness Skills — 编程智能体可使用的技能 |
+| `scripts/` | 安装与卸载脚本 |
+| `benchmarks/` | Benchmark 套件 — 评估编程智能体能力的标准化任务 |
+| `sample/` | 示例 UE5 项目（TPSample） |
+| `docs/` | 设计与文档资料 |
+| `tests/` | 测试相关 |
+
+---
+
+## 安装 Harness
 
 推荐使用安装脚本
 
@@ -54,11 +67,35 @@ debug 编译
 - 默认 Development Editor，提到 debug/调试编译配置自动切换至 Debug Editor
 - 支持 Windows，兼容 UE 5.x
 
+---
+
+## Benchmark
+
+本仓库包含 `benchmarks/ue5-skillsbench/` — 一套用于评估编程智能体在 UE5 开发场景下能力的标准化 Benchmark。
+
+### 运行 Benchmark
+
+```bash
+# 使用 Python 运行
+python -m benchmarks.ue5-skillsbench.runner
+
+# 或进入目录后运行
+python -m runner
+```
+
+### 任务类型
+
+- **环境检查** — 验证 UE5 环境是否正常
+- **编译修复** — 在故意引入编译错误的项目中修复问题
+- **多模块编译** — 验证跨模块编译能力
+
+更多详情参见 `benchmarks/ue5-skillsbench/` 目录。
+
 ## 环境要求
 
 - Windows
 - PowerShell
-- 已安装虚幻引擎
+- 已安装虚幻引擎（用于运行 Benchmark 和 Harness）
 
 ## 许可证
 
