@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .adapter import CodexAdapter, KimiCodeAdapter, ManualAdapter, NoopAdapter, OracleAdapter
 from .config import BenchmarkConfig, ConditionConfig, discover_tasks, load_benchmark_yaml
-from .metrics import capture_git_diff, diff_metrics, git_add_untracked
+from .metrics import capture_filtered_git_diff, capture_git_diff, diff_metrics, git_add_untracked
 from .preflight import run_preflight
 from .report import make_report
 from .unreal import invoke_build
@@ -145,6 +145,8 @@ def cmd_run_single(args: argparse.Namespace) -> int:
     git_add_untracked(project_path)
     diff_path = artifacts_path / "git.diff"
     capture_git_diff(project_path, diff_path)
+    filtered_diff_path = artifacts_path / "git.filtered.diff"
+    capture_filtered_git_diff(project_path, filtered_diff_path)
     diff_metrics_result = diff_metrics(project_path)
 
     # Verifier (always with clean build for UE tasks)

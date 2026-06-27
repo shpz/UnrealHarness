@@ -8,7 +8,7 @@ Supports both Launcher-installed and source-built engines.
 Usage:
     python build.py
     python build.py --config Debug
-    python build.py --project "D:\Projects\MyGame\MyGame.uproject"
+    python build.py --project "D:/Projects/MyGame/MyGame.uproject"
     python build.py -h
 
 Exit codes:
