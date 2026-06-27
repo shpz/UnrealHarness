@@ -1,0 +1,14 @@
+diff --git a/Source/TPSample/TPSample.Build.cs b/Source/TPSample/TPSample.Build.cs
+--- a/Source/TPSample/TPSample.Build.cs
++++ b/Source/TPSample/TPSample.Build.cs
+@@ -18,7 +18,9 @@ public class TPSample : ModuleRules
+ 			"StateTreeModule",
+ 			"GameplayStateTreeModule",
+ 			"UMG",
+-			"Slate"
++			"Slate",
++			"NavigationSystem",
++			"GameplayTasks"
+ 		});
+ 
+ 		PrivateDependencyModuleNames.AddRange(new string[] { });

@@ -1,0 +1,36 @@
+project:
+  source: sample/TPSample
+  uproject: TPSample.uproject
+  engineAssociation: "5.7"
+  target: TPSampleEditor
+  platform: Win64
+  configuration: Development
+
+skills:
+  ue-build:
+    path: skills/UnrealHarness/skills/ue-build
+
+conditions:
+  - id: no-skills
+    skills: []
+  - id: ue-build-only
+    skills:
+      - ue-build
+
+runner:
+  runRoot: .bench/runs
+  trials: 3
+  copyExcludes:
+    - Binaries
+    - DerivedDataCache
+    - Intermediate
+    - Saved
+  artifacts:
+    - agent.prompt.md
+    - prompt-input.json
+    - git.diff
+    - agent.stdout.log
+    - agent.stderr.log
+    - build.log
+    - automation
+    - verifier_result.json

@@ -1,0 +1,11 @@
+diff --git a/TPSample.uproject b/TPSample.uproject
+--- a/TPSample.uproject
++++ b/TPSample.uproject
+@@ -1,6 +1,6 @@
+ {
+ 	"FileVersion": 3,
+-	"EngineAssociation": "5.8",
++	"EngineAssociation": "5.7",
+ 	"Category": "",
+ 	"Description": "",
+ 	"Modules": [
