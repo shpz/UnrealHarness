@@ -1,4 +1,4 @@
-"""Verifier for engine-typo task: checks EngineAssociation then clean build."""
+"""Verifier for auto-discover: find the real project in nested dirs and build it."""
 import json
 import sys
 from pathlib import Path
@@ -12,6 +12,7 @@ def main():
 
     project_path = Path(os.environ.get("PROJECT_PATH", "."))
     artifacts_path = Path(os.environ.get("ARTIFACTS_PATH", "artifacts"))
+
     build_log = artifacts_path / "build.log"
 
     checks = []
@@ -20,24 +21,31 @@ def main():
     passed = False
 
     try:
-        uproject_path = project_path / "TPSample.uproject"
-        if not uproject_path.exists():
-            raise RuntimeError(f".uproject not found: {uproject_path}")
-
-        descriptor = json.loads(uproject_path.read_text(encoding="utf-8"))
-        engine_assoc = descriptor.get("EngineAssociation", "")
-        engine_ok = engine_assoc == "5.7"
+        # Search for .uproject files in project_path
+        uproject_files = list(project_path.rglob("*.uproject"))
         checks.append({
-            "name": "engine_association",
-            "passed": engine_ok,
-            "detail": f"EngineAssociation='{engine_assoc}', expected '5.7'",
+            "name": "uproject_found",
+            "passed": len(uproject_files) > 0,
+            "detail": [str(p.relative_to(project_path)) for p in uproject_files],
         })
 
-        if not engine_ok:
-            failure_class = "wrong-fix"
+        # Find the real project (GameA)
+        real_project = None
+        for up in uproject_files:
+            if "GameA" in str(up):
+                real_project = up
+                break
+
+        if real_project is None:
+            checks.append({"name": "real_project_found", "passed": False, "detail": "Could not find Projects/GameA/TPSample.uproject"})
+            failure_class = "setup"
         else:
+            checks.append({"name": "real_project_found", "passed": True, "detail": str(real_project.relative_to(project_path))})
+
+            # Build the real project
+            game_a_path = real_project.parent
             build_result = invoke_build(
-                project_path=project_path,
+                project_path=game_a_path,
                 target="TPSampleEditor",
                 platform="Win64",
                 configuration="Development",
@@ -52,6 +60,7 @@ def main():
                 "duration_ms": int(build_result["duration_seconds"] * 1000),
                 "detail": build_result["command_line"],
             })
+
             if not build_passed:
                 failure_class = "build"
 

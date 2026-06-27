@@ -1,6 +1,5 @@
-"""Verifier for build-repair: clean build + static fixture checks."""
+"""Verifier for engine-resolve: build project after GUID registry conversion."""
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -14,7 +13,6 @@ def main():
     project_path = Path(os.environ.get("PROJECT_PATH", "."))
     artifacts_path = Path(os.environ.get("ARTIFACTS_PATH", "artifacts"))
 
-    fixture_path = project_path / "Source" / "TPSample" / "SkillsBenchBuildProbe.cpp"
     build_log = artifacts_path / "build.log"
 
     checks = []
@@ -23,22 +21,6 @@ def main():
     passed = False
 
     try:
-        fixture_exists = fixture_path.exists()
-        checks.append({"name": "fixture_exists", "passed": fixture_exists, "detail": str(fixture_path)})
-
-        fixture_has_probe = False
-        fixture_has_navigation_call = False
-        fixture_has_gameplay_task = False
-        if fixture_exists:
-            text = fixture_path.read_text(encoding="utf-8")
-            fixture_has_probe = "CountProjectedNavigationPoints" in text
-            fixture_has_navigation_call = "UNavigationSystemV1::FindPathToLocationSynchronously" in text
-            fixture_has_gameplay_task = "UGameplayTask::StaticClass" in text
-
-        checks.append({"name": "fixture_probe_code", "passed": fixture_has_probe, "detail": "CountProjectedNavigationPoints must remain present."})
-        checks.append({"name": "fixture_navigation_call", "passed": fixture_has_navigation_call, "detail": "NavigationSystem call must remain present."})
-        checks.append({"name": "fixture_gameplay_task", "passed": fixture_has_gameplay_task, "detail": "GameplayTask reference must remain present."})
-
         build_result = invoke_build(
             project_path=project_path,
             target="TPSampleEditor",
@@ -56,16 +38,7 @@ def main():
             "detail": build_result["command_line"],
         })
 
-        log_text = ""
-        if build_log.exists():
-            log_text = build_log.read_text(encoding="utf-8")
-
-        has_compiler_errors = bool(re.search(r'error C\d+|fatal error|UnrealHeaderTool failed|error LNK\d*', log_text, re.IGNORECASE))
-        checks.append({"name": "build_log_clean", "passed": not has_compiler_errors, "detail": "No compiler, linker, fatal, or UHT errors in build.log."})
-
-        if not fixture_exists or not fixture_has_probe or not fixture_has_navigation_call or not fixture_has_gameplay_task:
-            failure_class = "wrong-fix"
-        elif not build_passed or has_compiler_errors:
+        if not build_passed:
             failure_class = "build"
 
         passed = failure_class is None

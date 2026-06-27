@@ -35,16 +35,22 @@ description: >
 
 ### 步骤 3：调用编译脚本
 
-执行 PowerShell 脚本：
+通过 Python 脚本执行编译：
 
 ```bash
-powershell -File "<skill-root>/build.ps1" -ProjectPath "<项目路径>" -Configuration "<配置>"
+python "<skill-root>/build.py" --project "<项目路径>" --config "<配置>"
 ```
 
 脚本会自动：
 - 从 `.uproject` 的 `EngineAssociation` 解析引擎路径
 - 推导 Target 名称（`项目名Editor`）
 - 调用 UBT 执行编译
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--project`, `-p` | 项目 `.uproject` 文件路径 | 自动检测当前目录 |
+| `--config`, `-c` | 编译配置：Development, Debug, Shipping, Test | Development |
+| `--platform`, `-pl` | 目标平台：Win64 | Win64 |
 
 ### 步骤 4：检查执行结果
 
@@ -61,7 +67,7 @@ powershell -File "<skill-root>/build.ps1" -ProjectPath "<项目路径>" -Configu
 | 包含 "error C"、"error LNK"、"fatal error" | 编译错误，直接报告用户，**不重试** |
 | 其他编译相关错误 | 直接报告用户，**不重试** |
 
-**最大重试次数：3 次**。每次重试用相同的参数重新调用 `build.ps1`。
+**最大重试次数：3 次**。每次重试用相同的参数重新调用 `build.py`。
 
 ### 步骤 6：反馈结果
 

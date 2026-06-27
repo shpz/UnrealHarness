@@ -215,7 +215,7 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
     config = load_benchmark_yaml(benchmark_root / "benchmark.yaml")
     tasks_dir = benchmark_root / "tasks"
     tasks = discover_tasks(tasks_dir) if tasks_dir.exists() else []
-    task_ids = [t.id for t in tasks] if tasks else ["tps-env-build-smoke", "tps-build-repair"]
+    task_ids = [t.id for t in tasks] if tasks else ["tps-env-build-smoke", "tps-build-auto-discover", "tps-build-engine-resolve"]
     conditions = [c.id for c in config.conditions]
     run_id = args.run_id or _run_id_now()
 
