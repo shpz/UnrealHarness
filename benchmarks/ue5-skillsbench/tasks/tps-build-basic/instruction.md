@@ -1,1 +1,1 @@
-使用 Debug Editor 配置编译这个项目。
+使用 DevelopmentEditor 配置编译这个项目。

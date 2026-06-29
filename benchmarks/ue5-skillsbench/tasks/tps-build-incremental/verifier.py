@@ -1,4 +1,4 @@
-"""Verifier for basic build: build TPSampleEditor with DebugEditor configuration."""
+"""Verifier for incremental build: compile after source code changes."""
 import json
 import sys
 from pathlib import Path
@@ -25,9 +25,9 @@ def main():
             project_path=project_path,
             target="TPSampleEditor",
             platform="Win64",
-            configuration="DebugGame",
+            configuration="Development",
             uproject_name="TPSample.uproject",
-            clean=True,
+            clean=False,
             build_log_path=build_log,
         )
         build_passed = build_result["exit_code"] == 0
