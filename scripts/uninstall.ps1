@@ -14,11 +14,11 @@
     Skip confirmation prompt.
 
 .EXAMPLE
-    .\uninstall-skills.ps1
+    .\scripts\uninstall.ps1
     # Uninstall from all detected assistants
 
 .EXAMPLE
-    .\uninstall-skills.ps1 -Assistant claude -Force
+    .\scripts\uninstall.ps1 -Assistant claude -Force
     # Remove from Claude Code without prompting
 #>
 [CmdletBinding()]

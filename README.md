@@ -93,9 +93,8 @@ python -m runner
 
 ## 环境要求
 
-- Windows
-- PowerShell
-- 已安装虚幻引擎（用于运行 Benchmark 和 Harness）
+- Python3
+- 已安装虚幻引擎
 
 ## 许可证
 

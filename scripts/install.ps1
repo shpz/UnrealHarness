@@ -18,11 +18,11 @@
     Overwrite existing skill directories.
 
 .EXAMPLE
-    .\install-skills.ps1
+    .\scripts\install.ps1
     # Install to all detected assistants
 
 .EXAMPLE
-    .\install-skills.ps1 -Assistant claude -Link
+    .\scripts\install.ps1 -Assistant claude -Link
     # Symlink to Claude Code only
 #>
 [CmdletBinding()]
@@ -65,9 +65,27 @@ Write-Host "Found $($skills.Count) skill(s):" -ForegroundColor Cyan
 $skills | ForEach-Object { Write-Host "  - $($_.Name)" }
 Write-Host ""
 
+if ($Link) {
+    $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("UnrealHarness-LinkTest-" + [System.Guid]::NewGuid().ToString("N"))
+    try {
+        $testTarget = Join-Path $testRoot "target"
+        $testLink = Join-Path $testRoot "link"
+        $null = New-Item -ItemType Directory -Path $testTarget -Force
+        $null = New-Item -ItemType SymbolicLink -Path $testLink -Target $testTarget
+    } catch {
+        Write-Error "Cannot create symbolic links. Re-run PowerShell as Administrator or enable Windows Developer Mode, then retry with -Link. Original error: $($_.Exception.Message)"
+        exit 1
+    } finally {
+        if (Test-Path $testRoot) {
+            Remove-Item -Path $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 # ---- Install ----
 $targets = if ($Assistant -eq "all") { @("claude","opencode","codex","kimi") } else { @($Assistant) }
 $installedAny = $false
+$skippedAny = $false
 
 foreach ($key in $targets) {
     $cfg = $configs[$key]
@@ -92,6 +110,7 @@ foreach ($key in $targets) {
         if (Test-Path $dstPath) {
             if (-not $Force) {
                 Write-Host "  skip $($skill.Name) (exists, use -Force to overwrite)" -ForegroundColor Yellow
+                $skippedAny = $true
                 continue
             }
             $item = Get-Item $dstPath
@@ -117,6 +136,10 @@ foreach ($key in $targets) {
 }
 
 if (-not $installedAny) {
+    if ($skippedAny) {
+        Write-Host "All matching skills are already installed. Use -Force to overwrite." -ForegroundColor Yellow
+        exit 0
+    }
     Write-Host "Nothing was installed. Make sure the target assistant is installed or use -Assistant." -ForegroundColor Red
     exit 1
 }
