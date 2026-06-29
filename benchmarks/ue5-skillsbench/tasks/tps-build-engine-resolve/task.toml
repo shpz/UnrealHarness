@@ -1,0 +1,10 @@
+id = "tps-build-engine-resolve"
+project = "TPSample"
+timeout_minutes = 45
+primary_skills = ["ue-build"]
+
+[metadata]
+difficulty = "medium"
+category = "software-engineering"
+subcategory = "engine-resolution"
+tags = ["unreal-engine", "ue5", "ubt", "registry", "guid", "engine-association"]

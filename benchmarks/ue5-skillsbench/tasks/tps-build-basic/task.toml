@@ -1,0 +1,10 @@
+id = "tps-build-basic"
+project = "TPSample"
+timeout_minutes = 45
+primary_skills = ["ue-build"]
+
+[metadata]
+difficulty = "easy"
+category = "software-engineering"
+subcategory = "basic-build"
+tags = ["unreal-engine", "ue5", "ubt", "basic-build", "debug-editor"]

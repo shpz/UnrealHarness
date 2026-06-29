@@ -1,0 +1,10 @@
+id = "tps-build-incremental"
+project = "TPSample"
+timeout_minutes = 45
+primary_skills = ["ue-build"]
+
+[metadata]
+difficulty = "easy"
+category = "software-engineering"
+subcategory = "incremental-build"
+tags = ["unreal-engine", "ue5", "ubt", "incremental-build", "development"]

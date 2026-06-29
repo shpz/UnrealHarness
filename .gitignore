@@ -1,0 +1,25 @@
+# Benchmark runs and reports
+.bench/
+reports/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志
+
+logs/
+
+# Temporary test projects
+tmp_test_incremental/
