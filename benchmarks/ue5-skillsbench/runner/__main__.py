@@ -234,7 +234,7 @@ def cmd_run_matrix(args: argparse.Namespace) -> int:
                     trial=trial,
                     run_id=trial_run_id,
                     skip_preflight=True,  # preflight once at start is enough
-                    timeout_minutes=config.runner.trials,
+                    timeout_minutes=30,
                     verifier_timeout=30,
                 )
                 rc = cmd_run_single(sub_args)

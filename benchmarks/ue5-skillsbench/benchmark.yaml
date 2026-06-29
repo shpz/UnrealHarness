@@ -18,8 +18,8 @@ conditions:
       - ue-build
 
 runner:
-  runRoot: .bench/runs
-  trials: 3
+  runRoot: D:\br
+  trials: 5
   copyExcludes:
     - Binaries
     - DerivedDataCache
