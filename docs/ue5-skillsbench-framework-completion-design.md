@@ -52,7 +52,7 @@ UE5 benchmark 允许使用 Windows、本机 Unreal Engine、隔离 workspace 和
 当前主要不足：
 
 - 任务只覆盖 `ue-build`，尚未覆盖 `ue-autotest`。
-- condition 不能表达 `ue-autotest-with-build`、`all-ue-skills` 等实验矩阵。
+- condition 不能表达 `ue-autotest-only`、`ue-autotest-with-build` 等实验矩阵。
 - oracle 只有 `oracle.patch` adapter 形状，但当前任务没有稳定 oracle baseline。
 - verifier 输出结构还未对 Automation report、scope、报告产物形成统一协议。
 - runner 不记录 skill 使用轨迹、命令次数、重试次数、首次有效行动等过程指标。
@@ -74,10 +74,13 @@ MVP 必须满足：
 7. 报告能展示 skill impact，而不仅是单次成功/失败。
 8. artifacts 足够复盘：prompt、diff、stdout/stderr、build log、Automation report、verifier result、runner result。
 
-建议完整 MVP 矩阵：
+建议完整 MVP 矩阵（按下文"Condition 矩阵补全"的必跑表计算）：
 
 ```text
-6 tasks x 3 conditions x 3 trials = 54 runs
+3 build tasks x 3 conditions x 3 trials = 27 runs
+2 autotest tasks (authoring/repair) x 3 conditions x 3 trials = 18 runs
+1 autotest task (reporting) x 2 conditions x 3 trials = 6 runs
+合计 51 runs
 ```
 
 ## 任务模型补全
@@ -169,20 +172,22 @@ conditions:
     skills: [ue-autotest]
   - id: ue-autotest-with-build
     skills: [ue-build, ue-autotest]
-  - id: all-ue-skills
-    skills: [ue-build, ue-autotest]
 ```
+
+不设 `all-ue-skills` condition。它与 `ue-autotest-with-build` 的 skill 集合完全相同，作为独立 condition 只会让同一实验配置重复消耗 UE 构建时间而不产生新信息。未来加入第三个 UE skill（如 `ue-lsp`）时再新增该 condition——旧报告中本就没有此字段，届时新增不构成兼容性破坏。
+
+`ue-autotest-only` 保留定义但 MVP 不强制跑，未来用于回答"autotest skill 是否依赖 build skill 才有效"。
 
 MVP 跑数时不要求每个任务都跑所有 conditions。推荐按任务类型选择：
 
 | 任务类型 | 必跑 conditions | 可选 conditions |
 | --- | --- | --- |
-| build | `no-skills`, `ue-build-only`, `all-ue-skills` | 无 |
-| autotest authoring | `no-skills`, `ue-autotest-with-build`, `all-ue-skills` | `ue-autotest-only` |
-| autotest repair | `no-skills`, `ue-autotest-with-build`, `all-ue-skills` | `ue-build-only` |
+| build | `no-skills`, `ue-build-only`, `ue-autotest-with-build` | 无 |
+| autotest authoring | `no-skills`, `ue-build-only`, `ue-autotest-with-build` | `ue-autotest-only` |
+| autotest repair | `no-skills`, `ue-build-only`, `ue-autotest-with-build` | `ue-autotest-only` |
 | autotest reporting | `no-skills`, `ue-autotest-with-build` | `ue-autotest-only` |
 
-`all-ue-skills` 目前可等价于 `[ue-build, ue-autotest]`。保留该 condition 名称是为了未来加入更多 UE skill 时不改变历史报告字段。
+condition 选择逻辑：build 任务跑 `ue-autotest-with-build` 用于观察附加无关 skill 是否造成负迁移；autotest 任务跑 `ue-build-only` 用于分离 `ue-autotest` 的边际贡献（相对"只有 build skill"的基线，而不仅是相对裸基线）。
 
 ## Oracle 机制补全
 
@@ -205,22 +210,25 @@ MVP 跑数时不要求每个任务都跑所有 conditions。推荐按任务类�
 
 ### Oracle 验收
 
-每个正式任务必须满足：
+每个正式任务必须满足以下原子验收链条，三段缺一不可：
 
 ```text
 setup 后 verifier 失败或缺少必要产物
 oracle 后 verifier 通过
-oracle 重复 3 次通过
+以上两段重复 3 次均成立
 ```
 
-runner 应提供独立命令：
+runner 提供单个验收命令，覆盖完整链条：
 
 ```bash
-python -m benchmarks.ue5-skillsbench.runner validate-task --task-id <task-id>
-python -m benchmarks.ue5-skillsbench.runner validate-oracle --task-id <task-id> --repeat 3
+python -m benchmarks.ue5-skillsbench.runner validate-task --task-id <task-id> --repeat 3
 ```
 
-如果暂不实现新命令，也应先用 `run-single --adapter oracle` 固化同等流程。
+`validate-task` 每轮执行：setup → 运行 verifier 并断言**失败** → 应用 oracle → 运行 verifier 并断言**通过**。内部复用 `run-single` 的 workspace/setup/verifier 逻辑，不重写流程。不拆分为 `validate-task` + `validate-oracle` 两个命令：验收是一个原子链条，拆开容易漏掉"setup 后必须失败"这一半——只验 oracle 通过、不验初始失败态的任务，很可能是 verifier 恒真的假任务。
+
+注意当前 `OracleAdapter` 在任务目录缺少 `oracle.patch` 时会静默返回成功（exit 0）。`validate-task` 必须把"任务声明了 oracle 但 oracle 文件缺失"判定为验收失败，不允许静默降级为 noop。
+
+`validate-task` 只适用于 oracle type 为 `patch` 或 `action` 的正式任务；对 type 为 `none` 的 smoke 任务直接报错退出并提示该任务不参与 oracle 验收。
 
 ## Verifier 协议补全
 
@@ -257,6 +265,8 @@ python -m benchmarks.ue5-skillsbench.runner validate-oracle --task-id <task-id> 
   }
 }
 ```
+
+schema 校验由 runner 侧共享 helper 执行，策略是 fail loudly：必需顶层字段（`passed`、`failure_class`、`checks`）缺失或类型错误时，trial 判为 `verifier-error` 并给出明确错误信息；允许 verifier 写出额外字段（如任务特有的检查细节），不因未知字段报错。任务 verifier 通过共享模块构造输出，不各自手写 JSON 结构。
 
 ### Failure class
 
@@ -343,17 +353,20 @@ runner 应在每次 trial 的 `prompt-input.json` 或 `result.json` 中记录：
 
 ### Trajectory 观测
 
-MVP 不要求完整录屏或 token 级 tracing，但应记录可获得的过程指标：
+过程指标分两档。MVP 只收第一档——runner 自身可直接观测、不依赖 agent 私有格式的指标：
 
 - agent wall-clock seconds。
 - build/verifier duration。
 - adapter exit code 与 timeout。
 - git diff 文件数、增删行。
 - 是否产生 Automation report。
-- build 或 Automation 命令执行次数，若 adapter 可观测。
-- skill 文件访问记录，若具体 agent/harness 能提供。
 
-如果某些 agent 暂时无法记录命令级 telemetry，报告中应显示为 `unknown`，不要伪造。
+第二档指标依赖各 agent/harness 的私有 telemetry 格式（如 codex session jsonl），MVP 不实现采集，但 schema 中预留字段并统一填 `"unknown"`：
+
+- `command_invocations`：build 或 Automation 命令执行次数。
+- `skill_file_reads`：skill 文件访问记录。
+
+预留字段的原因：这两项是回答"提升来自哪里"和"是否减少无效尝试"的关键证据，等真实 agent 跑数后按具体 adapter 的 session log 格式决定投入。在此之前报告中显示 `unknown`，不做 stdout 正则猜测——从 stdout 匹配命令字符串不等于命令被执行，产出看似精确实则错误的数据比缺数据更糟。
 
 ## Reporting 补全
 
@@ -409,16 +422,16 @@ reports/<run-id>-failures.md
 
 ### Build 任务
 
-保留现有 build 任务，但应区分 smoke 与正式任务：
+保留现有 build 任务，但应区分 smoke 与正式任务。MVP 判定标准要求 3 个正式 build 任务，`tps-build-basic` 降级为 smoke 后需新增 1 个 repair 型任务补足：
 
-| 任务 | 建议处理 |
+| 任务 | 处理 |
 | --- | --- |
-| `tps-build-basic` | 标记为 smoke，不计入正式 skill impact 或单独分组 |
-| `tps-build-engine-resolve` | 可保留为正式 `ue-build` 任务 |
-| `tps-build-incremental` | 可保留，但需确认它不是纯运行 build，而是能体现 skill 差异 |
-| 新 build repair 任务 | 建议新增 module dependency / Build.cs / Target.cs 修复类任务 |
+| `tps-build-basic` | 标记为 smoke，不计入正式 skill impact 统计 |
+| `tps-build-engine-resolve` | 保留为正式 `ue-build` 任务 |
+| `tps-build-incremental` | 暂保留为正式任务；Phase A 验收时确认其 setup/verifier 确实构造了 skill 敏感场景（而非纯运行 build）。若降级为 smoke，则需再新增一个 repair 型任务补足 3 个正式 build 任务 |
+| `tps-build-fix-module-dependency`（新增） | 正式任务：setup 注入 module dependency / `Build.cs` / `Target.cs` 缺陷导致编译或链接失败，agent 需定位并修复 |
 
-正式 build 任务应优先是 repair 型，而不是单纯“请编译项目”。
+正式 build 任务应优先是 repair 型，而不是单纯"请编译项目"——后者大概率 no-skills 也能通过，测不出 skill impact。
 
 ### `ue-autotest` 任务
 
@@ -472,6 +485,7 @@ tests/benchmark_runner/
 
 ```bash
 python -m benchmarks.ue5-skillsbench.runner preflight
+python -m benchmarks.ue5-skillsbench.runner validate-task --task-id tps-build-engine-resolve --repeat 3
 python -m benchmarks.ue5-skillsbench.runner run-single --task-id tps-build-engine-resolve --condition ue-build-only --adapter codex
 python -m benchmarks.ue5-skillsbench.runner run-matrix --adapter codex --run-id <run-id>
 python -m benchmarks.ue5-skillsbench.runner report --run-id <run-id>
@@ -482,11 +496,12 @@ python -m benchmarks.ue5-skillsbench.runner report --run-id <run-id>
 ### Phase A：框架协议固化
 
 - 更新 `benchmark.yaml`，加入 `ue-autotest` 和组合 conditions。
-- 定义 verifier result schema。
-- 定义 oracle 类型和 task authoring 约定。
+- 定义 verifier result schema 与共享校验 helper。
+- 定义 oracle 类型和 task authoring 约定，实现 `validate-task` 命令。
+- 审查 `tps-build-incremental` 是否构造了 skill 敏感场景，决定保留或降级为 smoke。
 - 修正 README 与过时 MVP 文档标记。
 
-验收：现有 build tasks 仍可 discovery，report 不回归。
+验收：现有 build tasks 仍可 discovery，report 不回归；`validate-task` 能对现有任意一个 build 任务完成三段验收。
 
 ### Phase B：Automation report 管线
 
@@ -495,15 +510,16 @@ python -m benchmarks.ue5-skillsbench.runner report --run-id <run-id>
 - 落地 `tps-autotest-run-scoped-report`。
 - oracle action 能生成报告并通过 verifier。
 
-验收：oracle 连续 3 次通过，错误 scope 能被 verifier 拒绝。
+验收：`tps-autotest-run-scoped-report` 通过 `validate-task --repeat 3`，错误 scope 能被 verifier 拒绝。
 
 ### Phase C：Autotest authoring 与 repair
 
 - 落地 `tps-autotest-add-input-math-tests`。
 - 落地 `tps-autotest-fix-failing-error-tests`。
+- 落地 `tps-build-fix-module-dependency`（新增 build repair 任务）。
 - 补防作弊检查：删除测试、弱化断言、跳过目标 scope。
 
-验收：三个 `ue-autotest` 任务 oracle 均连续 3 次通过。
+验收：三个 `ue-autotest` 任务与新增 build 任务的 oracle 均通过 `validate-task --repeat 3`。
 
 ### Phase D：实验矩阵与报告
 
@@ -533,3 +549,14 @@ python -m benchmarks.ue5-skillsbench.runner report --run-id <run-id>
 - 文档不再把读者引向过时 PowerShell MVP 或原版 BenchFlow 兼容目标。
 
 达到以上标准后，当前项目可以称为“UE5 场景迁移版 SkillsBench MVP”。在此之前，它更准确地说是 `ue-build` benchmark runner 原型。
+
+## 决策记录
+
+2026-07-02 评审敲定，与正文一致，冲突时以正文为准：
+
+1. **不设 `all-ue-skills` condition**：与 `ue-autotest-with-build` 完全重复，MVP 为 4 个 conditions；`ue-autotest-only` 保留定义但不强制跑。
+2. **oracle 验收合并为单个 `validate-task --repeat 3` 命令**：一条命令原子覆盖"setup 失败 → oracle 通过 × N 轮"，不拆为两个命令；声明 oracle 但文件缺失判为失败。
+3. **trajectory 指标 MVP 只收 runner 可直接观测的第一档**：`command_invocations`、`skill_file_reads` 预留字段填 `unknown`，不做 stdout 正则猜测。
+4. **build 任务账**：`tps-build-basic` 降为 smoke，新增 `tps-build-fix-module-dependency` 补足 3 个正式任务；`tps-build-incremental` 的 skill 敏感性确认纳入 Phase A 验收。
+5. **verifier schema 由共享 helper 校验**：必需字段缺失 fail loudly（判 `verifier-error`），允许额外字段；Automation report 解析为共享 helper。
+6. **实现顺序以本文为准**：`run-scoped-report` 先行以降低 Automation report 管线风险，覆盖任务设计文档中的"authoring 先行"顺序。

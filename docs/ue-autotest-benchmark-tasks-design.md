@@ -2,6 +2,8 @@
 
 日期：2026-07-02
 
+> 注：三个任务的**实现顺序**以 [`ue5-skillsbench-framework-completion-design.md`](./ue5-skillsbench-framework-completion-design.md) 为准（`run-scoped-report` 先行，优先打通 Automation report 管线），本文中的任务编号顺序不代表实现顺序。condition 矩阵也以该文档为准。
+
 本文设计 3 个面向 `ue-autotest` skill 的 `ue5-skillsbench` 任务。目标不是直接实现任务，而是定义后续应落到 `benchmarks/ue5-skillsbench/tasks/<id>/` 下的 `task.toml`、`instruction.md`、`setup.py`、`verifier.py`、oracle patch 和 artifacts 约束。
 
 现有 benchmark 框架约定：
