@@ -2,19 +2,16 @@
 # Test module auto-discovery pattern
 testModulePattern: "Source/*Test/*.Build.cs"
 
-# Map module names to test categories for report grouping
-moduleCategories:
-  CoreGameplayTest: "unit"
-  FeatureIntegrationTest: "integration"
-  PerformanceTest: "performance"
+# Map module names to test categories for scope keywords (unit/integration/performance).
+# Disabled by default: uncomment and fill in with YOUR project's actual test
+# module names before using category scopes.
+# moduleCategories:
+#   MyProjectCoreTest: "unit"
+#   MyProjectIntegrationTest: "integration"
+#   MyProjectPerfTest: "performance"
 
-# Execution timeouts
+# Editor process timeout (seconds)
 editorTimeoutSeconds: 600
-singleTestTimeoutSeconds: 120
-
-# Report output
-reportOutputDir: "Saved/Automation/Reports"
-reportFormat: "markdown"
 
 # Editor command-line arguments (always applied)
 editorExtraArgs:
@@ -23,11 +20,9 @@ editorExtraArgs:
   - "-nosplash"
   - "-log"
 
-# Log parsing regex patterns (customizable per UE version)
+# Log parsing regex patterns, used only as fallback when the native
+# Automation report (index.json) is missing (customizable per UE version)
 logPatterns:
-  testStart: 'LogAutomationController:.*Running Tests'
   testPassed: 'LogAutomationController:\s+(.+?)\s+passed\s*\(([^)]+)\)'
   testFailed: 'LogAutomationController:\s+(.+?)\s+failed'
   testError: 'LogAutomationController:\s*Error:\s*(.+)'
-  summaryLine: 'LogAutomationController:\s*(\d+)\s+tests run.*?(\d+)\s+passed.*?(\d+)\s+failed'
-

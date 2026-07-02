@@ -1,20 +1,8 @@
-# UE5 自动化测试模式指南
-
-> 从已验证的 UE5 Editor 与 non-PIE 自动化测试实践中提炼出的通用 C++ 测试编写模式。
-
----
+# UE5 自动化测试模式速查卡
 
 ## 1. 测试模块结构
 
-### 最小可运行模块
-
-```
-Source/
-├── <RuntimeModule>/              # 被测模块
-└── <RuntimeModule>Test/          # 测试模块
-    ├── <RuntimeModule>Test.Build.cs
-    └── <Feature>Test.cpp         # 一个文件一个功能域
-```
+被测模块 `<RuntimeModule>` 旁建 `<RuntimeModule>Test` 测试模块，一个 .cpp 覆盖一个功能域。
 
 ### Build.cs 模板
 
@@ -26,13 +14,11 @@ public class RuntimeModuleTest : ModuleRules
     public RuntimeModuleTest(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-
         PublicDependencyModuleNames.AddRange(new[] {
             "Core",
             "UnrealEd",           // Editor 测试模块需要
             "<RuntimeModule>"     // 被测模块
         });
-
         PrivateDependencyModuleNames.AddRange(new[] {
             "CoreUObject",
             "Engine"
@@ -41,264 +27,101 @@ public class RuntimeModuleTest : ModuleRules
 }
 ```
 
-**关键依赖：**
-- `UnrealEd` — Editor 测试模块依赖；不要放进 Game target
-- 被测模块 — 确保 Public 头文件可达
-- `CoreUObject` / `Engine` — 基础 UObject 和 World 支持
+**警告：`UnrealEd` 只能进 Editor 测试模块，不要放进 Game target。** 被测模块的 Public 头文件必须可达；`CoreUObject` / `Engine` 提供 UObject 与 World 支持。
 
 ---
 
 ## 2. 测试宏选择
 
-默认使用 `IMPLEMENT_SIMPLE_AUTOMATION_TEST`。除非项目已经建立 `AutomationSpec` 体系，否则不要混用 `Describe`、`It` 或参数化测试。
+默认用 `IMPLEMENT_SIMPLE_AUTOMATION_TEST`。项目未建立 AutomationSpec 体系时不要混用 `Describe` / `It` / 参数化测试。
 
-```cpp
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-    FInventory_Stack_AddItem,
-    "MyProject.Inventory.Stack.AddItem",
-    EAutomationTestFlags::ApplicationContextMask |
-    EAutomationTestFlags::EngineFilter
-)
+| Flag 组合 | 场景 |
+|-----------|------|
+| `ApplicationContextMask \| EngineFilter` | 纯 C++、UObject、数组、错误处理、委托、性能/内存测试；默认首选，可配合 `-nullrhi` 无头运行 |
+| `EditorContext \| ProductFilter` | 需要 Editor 模块、PIE、World、Actor、Component 生命周期时才用 |
 
-bool FInventory_Stack_AddItem::RunTest(const FString& Parameters)
-{
-    FInventoryStack Stack;
-
-    const bool bAdded = Stack.AddItem(TEXT("Potion"), 2);
-
-    TestTrue(TEXT("Item add succeeds"), bAdded);
-    TestEqual(TEXT("Quantity is stored"), Stack.GetQuantity(TEXT("Potion")), 2);
-
-    return true;
-}
-```
-
-### 何时用哪种 Flag
-
-| Flag 组合 | 场景 | 运行方式 |
-|-----------|------|----------|
-| `ApplicationContextMask \| EngineFilter` | 纯 C++、UObject、数组、错误处理、委托、性能/内存测试 | 默认首选，可配合 `-nullrhi` 无头运行 |
-| `EditorContext \| ProductFilter` | 需要 Editor 模块、PIE、World、Actor、Component 生命周期 | 仅在确实需要编辑器/PIE 时使用 |
-
-纯逻辑和数据测试优先用 non-PIE headless；只有 World、Actor、Component 生命周期或真实 Editor 行为必须参与时才使用 PIE/latent command。
+原则：纯逻辑和数据测试优先 non-PIE headless；只有 World / Actor / Component 生命周期或真实 Editor 行为必须参与时才用 PIE + latent command。
+原始写法：`ApplicationContextMask | EngineFilter`，`EditorContext | ProductFilter`。
 
 ---
 
 ## 3. 命名约定
 
-### 测试全名格式
+`<Project>.<Domain>.<Feature>.<Scenario>`
 
-```
-<Project>.<Domain>.<Feature>.<Scenario>
-```
+| 层级 | 示例 |
+|------|------|
+| Domain | Inventory、SaveGame、ErrorHandling、Performance、AI、UI、Component |
+| Feature | Stack、Serialization、Memory、Speed |
+| Scenario | AddItem、RoundTrip、BufferPressure、DelegateChain |
 
-**通用实例：**
-
-| 测试全名 | 含义 |
-|---------|------|
-| `MyProject.Inventory.Stack.AddItem` | 背包域 / 堆叠功能 / 添加物品 |
-| `MyProject.SaveGame.Serialization.RoundTrip` | 存档域 / 序列化功能 / 往返校验 |
-| `MyProject.ErrorHandling.SaveFailureDedupe` | 错误处理 / 保存失败 / 错误去重回归测试 |
-| `MyProject.Performance.Memory.BufferPressure` | 性能 / 内存 / 缓冲压力测试 |
-
-### 命名层级语义
-
-```
-MyProject.<Domain>.<Feature>.<Scenario>
-
-Domain:   Inventory | SaveGame | ErrorHandling | Performance | AI | UI | Component
-Feature:  Stack | Serialization | Memory | Speed | RegisterConsumer
-Scenario: AddItem | RoundTrip | BufferPressure | DelegateChain
-```
-
-**规则：**
-- 不要用下划线分隔，用 `.` 层级
-- 回归测试在 Scenario 中体现行为：`SaveFailureDedupe` > `ErrorDedupeBug`
-- 性能测试固定前缀：`MyProject.Performance.Speed.*` 或 `MyProject.Performance.Memory.*`
+- 用 `.` 分层，不用下划线
+- 回归测试的 Scenario 描述行为：`SaveFailureDedupe` > `ErrorDedupeBug`
+- 性能测试固定前缀：`Performance.Speed.*` / `Performance.Memory.*`
 
 ---
 
 ## 4. 断言模式
 
-### 4.1 标准宏（UE 内置）
-
 ```cpp
-TestEqual(TEXT("Message"), Actual, Expected);
-TestTrue(TEXT("Message"), Condition);
-TestFalse(TEXT("Message"), Condition);
-TestNotNull(TEXT("Message"), Pointer);
+TestEqual(TEXT("Msg"), Actual, Expected);   // 数值、枚举、字符串精确匹配
+TestTrue(TEXT("Msg"), Condition);           // 布尔条件成立
+TestFalse(TEXT("Msg"), Condition);
+TestNotNull(TEXT("Msg"), Pointer);          // UObject 创建成功
 ```
 
-**使用场景：**
-- `TestEqual` — 数值、枚举、字符串精确匹配
-- `TestTrue/TestFalse` — 布尔状态、条件成立
-- `TestNotNull` — UObject 创建成功验证
-
-### 4.2 自定义验证
-
-浮点、批量数据或复杂结构不适合精确相等时，使用自定义比较并通过 `AddError` 输出定位信息。
-
-```cpp
-static bool ArraysEqualWithTolerance(
-    const TArray<float>& A,
-    const TArray<float>& B,
-    float Tolerance = 1.0f)
-{
-    if (A.Num() != B.Num()) return false;
-    for (int32 Index = 0; Index < A.Num(); ++Index)
-    {
-        if (FMath::Abs(A[Index] - B[Index]) > Tolerance) return false;
-    }
-    return true;
-}
-
-if (!FGenericTestUtils::ArraysEqualWithTolerance(Expected, Actual, 0.01f))
-{
-    AddError(TEXT("Values differ beyond tolerance"));
-}
-```
-
-**原则：**
-- 精确匹配用 `TestEqual`
-- 浮点和批量数据用自定义比较 + `AddError`
-- 诊断信息用 `AddInfo`（输出到日志，不标记失败）
+浮点与批量数据不适合精确相等，用容差比较（tolerance comparison，逐元素 `FMath::Abs(A[i]-B[i]) > Tolerance` 即失败），不匹配时 `AddError(TEXT("Values differ beyond tolerance"))` 输出定位信息；诊断信息用 `AddInfo`（只写日志，不标失败）。
 
 ---
 
 ## 5. 辅助工具类模式
 
-每个测试文件可以有对应的 `F*TestUtils` 静态工具类；跨文件复用时放到测试模块 Public 头文件。
+每个测试文件可配一个 `FGenericTestUtils` 或 `F*TestUtils` 静态工具类；跨文件复用时放测试模块 Public 头文件。典型职责：
 
-### 5.1 数据生成工具
+- **数据生成**：`GenerateLinearValues(Count, Start, Step)`、`ValidateRange(Values, Min, Max)`
+- **文件 I/O**：用 `FPaths::ProjectDir()` 拼 fixture 路径，`FFileHelper::LoadFileToArray` 加载，失败时 `UE_LOG` 报错
 
-```cpp
-class FGenericTestUtils
-{
-public:
-    static TArray<float> GenerateLinearValues(int32 Count, float Start = 0.0f, float Step = 1.0f)
-    {
-        TArray<float> Values;
-        Values.Reserve(Count);
-
-        for (int32 Index = 0; Index < Count; ++Index)
-        {
-            Values.Add(Start + Step * Index);
-        }
-        return Values;
-    }
-
-    static bool ValidateRange(const TArray<float>& Values, float Min = -1.0f, float Max = 1.0f)
-    {
-        for (float Value : Values)
-        {
-            if (Value < Min || Value > Max) return false;
-        }
-        return true;
-    }
-};
-```
-
-### 5.2 文件 I/O 工具
-
-```cpp
-class FFileTestUtils
-{
-public:
-    static TArray<uint8> LoadFixtureBytes(const FString& Filename)
-    {
-        const FString ProjectDir = FPaths::ProjectDir();
-        const FString FullPath = FPaths::Combine(ProjectDir, TEXT("TestFixtures"), Filename);
-
-        TArray<uint8> Bytes;
-        if (!FFileHelper::LoadFileToArray(Bytes, *FullPath))
-        {
-            UE_LOG(LogTemp, Error, TEXT("Failed to load %s"), *FullPath);
-        }
-        return Bytes;
-    }
-
-    static bool ParseHeader(const TArray<uint8>& Bytes, FExampleHeader& OutHeader);
-};
-```
-
-### 5.3 错误追踪辅助（可复用的 UObject 模式）
-
-`UErrorTestHelper` 是一个通用模式：用专门的 UObject 绑定和追踪委托广播。
+### 错误追踪辅助（UErrorTestHelper 模式）
 
 ```cpp
 UCLASS()
 class RUNTIMEMODULETEST_API UErrorTestHelper : public UObject
 {
     GENERATED_BODY()
-
 public:
-    UPROPERTY()
-    int32 BroadcastCount = 0;
-
-    UPROPERTY()
-    FString LastErrorMessage;
-
+    UPROPERTY() int32 BroadcastCount = 0;
+    UPROPERTY() FString LastErrorMessage;
     UFUNCTION()
     void OnErrorReceived(const FGenericErrorInfo& ErrorInfo)
-    {
-        BroadcastCount++;
-        LastErrorMessage = ErrorInfo.Message;
-    }
-
+    { BroadcastCount++; LastErrorMessage = ErrorInfo.Message; }
     void Reset() { BroadcastCount = 0; LastErrorMessage.Empty(); }
 };
-
-UErrorTestHelper* Helper = NewObject<UErrorTestHelper>();
-Handler->OnError.AddDynamic(Helper, &UErrorTestHelper::OnErrorReceived);
-
-Handler->ProcessInvalidData();
-
-TestEqual(TEXT("Error broadcast exactly once"), Helper->BroadcastCount, 1);
+// 用法：AddDynamic 绑定 → 触发错误 → TestEqual(BroadcastCount, 1)
 ```
 
 ---
 
 ## 6. Testable 子类模式（白盒测试）
 
-用 **Testable 子类**暴露 protected 成员，避免为了测试修改生产代码的访问控制。
+用 `UTestable*` 子类 + `using` 声明暴露 protected 成员，零侵入生产代码：
 
 ```cpp
-UCLASS()
-class RUNTIMEMODULE_API UGenericWriter : public UObject
-{
-    GENERATED_BODY()
-protected:
-    FString OutputDirectory;
-    bool bIsWriting = false;
-    void InternalWriteChunk(const TArray<uint8>& Data);
-};
-
 UCLASS()
 class RUNTIMEMODULETEST_API UTestableGenericWriter : public UGenericWriter
 {
     GENERATED_BODY()
 public:
-    using UGenericWriter::InternalWriteChunk;
-    using UGenericWriter::OutputDirectory;
-
+    using UGenericWriter::InternalWriteChunk;   // 暴露 protected 方法
+    using UGenericWriter::OutputDirectory;      // 暴露 protected 成员
     bool GetIsWriting() const { return bIsWriting; }
 };
-
-UTestableGenericWriter* Writer = NewObject<UTestableGenericWriter>();
-Writer->OutputDirectory = TEXT("/Invalid/Path");
-Writer->InternalWriteChunk(TestData);
 ```
-
-**优势：**
-- 零侵入生产代码
-- 可测试内部状态而不破坏封装
-- 易于清理（测试模块隔离）
 
 ---
 
 ## 7. PIE 集成测试（Latent Commands）
 
-需要运行时 World 的测试使用 UE 的 Latent Automation Command 模式。
+需要运行时 World 时用 `ADD_LATENT_AUTOMATION_COMMAND`：
 
 ```cpp
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -313,27 +136,21 @@ bool FComponent_Lifecycle_SpawnAndTick::RunTest(const FString& Parameters)
     TSharedPtr<bool> bComponentTicked = MakeShared<bool>(false);
 
     ADD_LATENT_AUTOMATION_COMMAND(FStartPIECommand(true));
-
     ADD_LATENT_AUTOMATION_COMMAND(FFunctionLatentCommand([this, bComponentTicked]()
     {
         UWorld* World = GEditor->GetEditorWorldContext().World();
         TestNotNull(TEXT("World exists"), World);
-
         UGenericComponent* Component = NewObject<UGenericComponent>(World->GetCurrentLevel());
         Component->Activate(true);
-
         *bComponentTicked = Component->HasTickedForTest();
         return true;
     }));
-
     ADD_LATENT_AUTOMATION_COMMAND(FWaitLatentCommand(1.0f));
-
     ADD_LATENT_AUTOMATION_COMMAND(FFunctionLatentCommand([this, bComponentTicked]()
     {
         TestTrue(TEXT("Component ticked"), *bComponentTicked);
         return true;
     }));
-
     ADD_LATENT_AUTOMATION_COMMAND(FEndPlayMapCommand());
 
     return true;
@@ -341,147 +158,72 @@ bool FComponent_Lifecycle_SpawnAndTick::RunTest(const FString& Parameters)
 ```
 
 **关键模式：**
-- `TSharedPtr` 跨 Lambda 共享可变状态（不能用捕获引用，Lambda 是异步执行的）
-- `FStartPIECommand(true)` — 以独立进程启动 PIE（更干净）
-- `FWaitLatentCommand(seconds)` — 等待时间流逝
-- 最后必须 `FEndPlayMapCommand()` 清理
+- Lambda 是异步执行的，跨 Lambda 共享可变状态必须用 `TSharedPtr`，不能捕获局部变量引用
+- `FStartPIECommand(true)` 以独立进程启动 PIE（更干净）
+- `FWaitLatentCommand(seconds)` 等待时间流逝
+- 最后必须 `FEndPlayMapCommand()` 清理，否则 World 状态污染后续测试
 
 ---
 
 ## 8. 性能测试模式
 
-### 8.1 速度测试
+速度：`FPerformanceTimer` 包装 `FPlatformTime::Seconds()`，断言耗时红线并 `AddInfo` 输出实测值：
 
 ```cpp
-struct FPerformanceTimer
-{
-    double StartTime;
-    void Start() { StartTime = FPlatformTime::Seconds(); }
-    double ElapsedMs() const { return (FPlatformTime::Seconds() - StartTime) * 1000.0; }
-};
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-    FPerformance_Speed_BatchProcessing,
-    "MyProject.Performance.Speed.BatchProcessing",
-    EAutomationTestFlags::EditorContext |
-    EAutomationTestFlags::ProductFilter
-)
-
-bool FPerformance_Speed_BatchProcessing::RunTest(const FString& Parameters)
-{
-    TArray<float> Source = FGenericTestUtils::GenerateLinearValues(100000);
-
-    FPerformanceTimer Timer;
-    Timer.Start();
-    const int32 ProcessedCount = UGenericFunctionLibrary::ProcessValues(Source);
-    const double Elapsed = Timer.ElapsedMs();
-
-    TestEqual(TEXT("All values processed"), ProcessedCount, Source.Num());
-    TestTrue(TEXT("Batch processing under 100ms"), Elapsed < 100.0);
-    AddInfo(FString::Printf(TEXT("Elapsed: %.2f ms"), Elapsed));
-
-    return true;
-}
+FPerformanceTimer Timer;   // Start() 记录 FPlatformTime::Seconds()
+Timer.Start();
+const int32 Count = UGenericFunctionLibrary::ProcessValues(Source);
+const double Elapsed = Timer.ElapsedMs();
+TestEqual(TEXT("All values processed"), Count, Source.Num());
+TestTrue(TEXT("Batch processing under 100ms"), Elapsed < 100.0);  // 红线断言
+AddInfo(FString::Printf(TEXT("Elapsed: %.2f ms"), Elapsed));
 ```
 
-### 8.2 内存测试
+内存：`FMemorySnapshot` 包装 `FPlatformMemory::GetStats()`，前后快照差值断言增长红线；比较前必须 `CollectGarbage`：
 
 ```cpp
-struct FMemorySnapshot
-{
-    FPlatformMemoryStats Stats;
-    void Capture() { Stats = FPlatformMemory::GetStats(); }
-    SIZE_T UsedPhysicalDelta(const FMemorySnapshot& Other) const
-    {
-        return Stats.UsedPhysical - Other.Stats.UsedPhysical;
-    }
-};
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-    FPerformance_Memory_LargeDataStability,
-    "MyProject.Performance.Memory.LargeDataStability",
-    EAutomationTestFlags::EditorContext |
-    EAutomationTestFlags::ProductFilter
-)
-
-bool FPerformance_Memory_LargeDataStability::RunTest(const FString& Parameters)
-{
-    FMemorySnapshot Before;
-    Before.Capture();
-
-    for (int32 Index = 0; Index < 100; ++Index)
-    {
-        auto* Processor = NewObject<UGenericDataProcessor>();
-        Processor->ProcessLargeDataSet();
-    }
-
-    CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
-
-    FMemorySnapshot After;
-    After.Capture();
-    const SIZE_T Delta = After.UsedPhysicalDelta(Before);
-    const SIZE_T MaxAllowed = 10 * 1024 * 1024;
-
-    TestTrue(TEXT("Memory growth under 10MB after 100 iterations"), Delta < MaxAllowed);
-    AddInfo(FString::Printf(TEXT("Memory delta: %.2f MB"), Delta / (1024.0 * 1024.0)));
-
-    return true;
-}
+FMemorySnapshot Before; Before.Capture();       // FPlatformMemory::GetStats()
+for (int32 i = 0; i < 100; ++i) { /* 反复执行被测操作 */ }
+CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);   // 排除未回收对象干扰
+FMemorySnapshot After; After.Capture();
+const SIZE_T Delta = After.UsedPhysicalDelta(Before);
+TestTrue(TEXT("Memory growth under 10MB"), Delta < 10 * 1024 * 1024);  // 红线断言
+AddInfo(FString::Printf(TEXT("Delta: %.2f MB"), Delta / (1024.0 * 1024.0)));
 ```
+
+两类测试都用 `ApplicationContextMask | EngineFilter`，命名归入 `Performance.Speed.*` / `Performance.Memory.*`。
 
 ---
 
 ## 9. 回归测试标记
 
-用**行为描述**而非 Bug ID 来命名回归测试，注释中可以保留 Bug ID。
+测试名用**行为描述**，Bug ID 保留在注释中：
 
 ```cpp
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-    FErrorHandling_SaveFailureDedupe,
-    "MyProject.ErrorHandling.SaveFailureDedupe",
-    EAutomationTestFlags::EditorContext |
-    EAutomationTestFlags::ProductFilter
-)
-
+// 名称：MyProject.ErrorHandling.SaveFailureDedupe
 bool FErrorHandling_SaveFailureDedupe::RunTest(const FString& Parameters)
 {
     // Regression: HIGH #2 — failed saves used to broadcast duplicate errors.
-
     UTestableGenericWriter* Writer = NewObject<UTestableGenericWriter>();
     UErrorTestHelper* Helper = NewObject<UErrorTestHelper>();
     Writer->OnError.AddDynamic(Helper, &UErrorTestHelper::OnErrorReceived);
-
-    for (int32 Index = 0; Index < 10; ++Index)
-    {
-        Writer->WriteToInvalidPath();
-    }
-
+    for (int32 i = 0; i < 10; ++i) { Writer->WriteToInvalidPath(); }
     TestEqual(TEXT("Error deduplicated to single broadcast"), Helper->BroadcastCount, 1);
-
     return true;
 }
 ```
 
 ---
 
-## 10. 测试文件组织建议
+## 10. 测试文件组织
 
 ```
 <RuntimeModule>Test/
-├── <Feature>Test.cpp             # 功能测试（一个文件一个域）
-├── <Feature>Test.h               # 共享的 TestUtils 和 Testable 子类
-├── PerformanceTest.cpp           # 性能测试（速度和内存放一起）
-├── ErrorHandlingTest.cpp         # 错误处理和回归测试
-└── Helpers/
-    ├── ErrorTestHelper.h         # 可复用的 UErrorTestHelper
-    └── Testable<Class>.h         # 各种 Testable 子类
+├── <Feature>Test.cpp / .h        # 一个 .cpp 一个功能域；.h 放共享 TestUtils 与 Testable 子类
+├── PerformanceTest.cpp           # 速度 + 内存合一文件，按命名前缀区分
+├── ErrorHandlingTest.cpp         # 错误处理与回归测试
+└── Helpers/                      # ErrorTestHelper.h、Testable<Class>.h
 ```
-
-**原则：**
-- 一个 `.cpp` 文件覆盖一个**功能域**
-- 工具类放 `.h` 文件，供同模块多个 `.cpp` 共享
-- 性能测试（速度 + 内存）可以合在一个文件，按命名前缀区分
-- 回归测试放在 ErrorHandling 文件或对应功能域文件
 
 ---
 
