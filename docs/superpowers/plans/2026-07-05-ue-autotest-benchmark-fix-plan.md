@@ -598,7 +598,80 @@ git commit -m "feat(ue-autotest): support multiple scopes in autotest.py"
 
 ---
 
-### Task 5: Relax add-input-math-tests Verifier
+### Task 5: Relax fix-failing-error-tests Verifier
+
+**Files:**
+- Modify: `benchmarks/ue5-skillsbench/tasks/tps-autotest-fix-failing-error-tests/verifier.py:103-105`
+- Test: `tests/benchmark_runner/test_fix_failing_error_task_verifier.py:40-62`
+
+**Interfaces:**
+- Produces: `production_helper_touched` now accepts any `\w+\.Code == Code` pattern in addition to `FindByPredicate`
+
+- [ ] **Step 1: Modify production_helper_touched check**
+
+Replace:
+
+```python
+{"name": "production_helper_touched", "passed": "Event.Code == Code" in helper_text or "FindByPredicate" in helper_text},
+```
+
+with:
+
+```python
+{"name": "production_helper_touched", "passed": bool(re.search(r"\b\w+\.Code\s*==\s*Code\b", helper_text)) or "FindByPredicate" in helper_text},
+```
+
+- [ ] **Step 2: Add unit test for alternative variable name**
+
+In `tests/benchmark_runner/test_fix_failing_error_task_verifier.py`, add:
+
+```python
+    def test_verifier_accepts_alternative_helper_variable_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "TPSample"
+            _write_project_shell(project, helper_code="void ReportError() { for (const FErrorEvent& Existing : PendingErrors) { if (Existing.Code == Code) { return; } } }")
+            _write_test_module(project, strong_assertion=True)
+            _write_report(
+                project,
+                [
+                    "TPSample.Error.Accumulator.RecordsErrors",
+                    "TPSample.Error.Accumulator.FlushClearsQueue",
+                    "TPSample.Error.Accumulator.DedupesBroadcast",
+                ],
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            result = _run_verifier(project, artifacts)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
+            self.assertTrue(verifier_result["passed"])
+```
+
+Update `_write_project_shell` to accept optional `helper_code` parameter.
+
+- [ ] **Step 3: Run verifier tests**
+
+Run:
+
+```bash
+python -m pytest tests/benchmark_runner/test_fix_failing_error_task_verifier.py -v
+```
+
+Expected: all pass
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add benchmarks/ue5-skillsbench/tasks/tps-autotest-fix-failing-error-tests/verifier.py tests/benchmark_runner/test_fix_failing_error_task_verifier.py
+git commit -m "feat(verifier): accept alternative variable names in production helper check"
+```
+
+---
+
+### Task 6: Relax add-input-math-tests Verifier
 
 **Files:**
 - Modify: `benchmarks/ue5-skillsbench/tasks/tps-autotest-add-input-math-tests/verifier.py:103-126`
@@ -771,7 +844,7 @@ git commit -m "feat(verifier): relax add-input-math-tests filename and flag chec
 
 ---
 
-### Task 6: Relax run-scoped-report Verifier Markdown Check
+### Task 7: Relax run-scoped-report Verifier Markdown Check
 
 **Files:**
 - Modify: `benchmarks/ue5-skillsbench/tasks/tps-autotest-run-scoped-report/verifier.py:108-110`
@@ -854,7 +927,7 @@ git commit -m "feat(verifier): relax run-scoped-report markdown content check"
 
 ---
 
-### Task 7: Update SKILL.md for Multi-Scope Usage
+### Task 8: Update SKILL.md for Multi-Scope Usage
 
 **Files:**
 - Modify: `skills/ue-autotest/SKILL.md:89-114`
@@ -889,7 +962,7 @@ git commit -m "docs(ue-autotest): document multi-scope usage"
 
 ---
 
-### Task 8: Run All Unit Tests
+### Task 9: Run All Unit Tests
 
 **Files:**
 - None
@@ -910,7 +983,7 @@ If tests fail, fix and commit. If all pass, no new commit.
 
 ---
 
-### Task 9: Integration Test with Actual Benchmark Runs
+### Task 10: Integration Test with Actual Benchmark Runs
 
 **Files:**
 - None (only commands)
@@ -978,10 +1051,11 @@ git commit -m "test: verify ue-autotest benchmark tasks pass with skill"
 | Spec Section | Implementing Task |
 |--------------|-------------------|
 | Runner 短路径 junction | Task 1, Task 2, Task 3 |
-| Verifier 文件名/flag 对齐 | Task 5 |
-| Verifier Markdown 语义化 | Task 6 |
-| Skill 多 scope 支持 | Task 4, Task 7 |
-| 测试策略 | Task 8, Task 9 |
+| Verifier production helper 变量名 | Task 5 |
+| Verifier 文件名/flag 对齐 | Task 6 |
+| Verifier Markdown 语义化 | Task 7 |
+| Skill 多 scope 支持 | Task 4, Task 8 |
+| 测试策略 | Task 9, Task 10 |
 
 ## Placeholder Scan
 
