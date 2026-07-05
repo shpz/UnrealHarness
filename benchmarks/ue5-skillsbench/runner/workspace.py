@@ -1,12 +1,15 @@
 """Workspace preparation: project copy, git init, skill injection, safety guards."""
 from __future__ import annotations
 
+import hashlib
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
 from .config import BenchmarkConfig, ConditionConfig
+from .junction import create_junction, remove_junction, resolve_junction_root
 
 
 class SafetyError(Exception):
@@ -135,6 +138,17 @@ def prepare_workspace(
     assert_safe_path(artifacts_root, run_root, repo_root, baseline_project)
 
     copy_project_filtered(project_source, project_destination, config.runner.copy_excludes)
+
+    junction_root = resolve_junction_root()
+    short_id = hashlib.sha1(run_id.encode("utf-8")).hexdigest()[:8]
+    junction_dir = junction_root / f"r{short_id}"
+    try:
+        create_junction(junction_dir, project_destination)
+        project_junction = junction_dir / "TPSample"
+    except Exception as exc:
+        print(f"Warning: failed to create junction {junction_dir}: {exc}", file=sys.stderr)
+        project_junction = project_destination
+
     init_git(project_destination)
     skills_root = inject_skills(repo_root, workspace_root, config, condition)
 
@@ -144,6 +158,8 @@ def prepare_workspace(
         "artifacts_root": str(artifacts_root),
         "automation_root": str(automation_root),
         "project_destination": str(project_destination),
+        "project_junction": str(project_junction),
+        "junction_dir": str(junction_dir) if project_junction != project_destination else None,
         "skills_root": str(skills_root) if skills_root else None,
         "result_json": str(run_dir / "result.json"),
     }

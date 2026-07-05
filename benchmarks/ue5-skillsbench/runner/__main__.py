@@ -284,6 +284,14 @@ def cmd_run_single(args: argparse.Namespace) -> int:
     automation_artifacts = collect_automation_artifacts(project_path, artifacts_path)
     skill_injection = describe_skill_injection(repo_root, workspace_root, config, condition, skills_root)
 
+    junction_dir = layout.get("junction_dir")
+    if junction_dir:
+        try:
+            from .junction import remove_junction
+            remove_junction(Path(junction_dir))
+        except Exception as exc:
+            print(f"Warning: failed to remove junction {junction_dir}: {exc}", file=sys.stderr)
+
     overall_passed = (
         adapter_result.exit_code == 0
         and not adapter_result.timed_out
