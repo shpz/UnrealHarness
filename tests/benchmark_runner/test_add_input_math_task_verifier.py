@@ -61,6 +61,29 @@ class AddInputMathTaskVerifierTests(unittest.TestCase):
             self.assertTrue(verifier_result["passed"])
             self.assertEqual(verifier_result["automation"]["executed_tests"], 3)
 
+    def test_verifier_accepts_input_math_test_with_application_context_mask(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "TPSample"
+            _write_project_shell(project)
+            _write_test_module_alternative(project)
+            _write_report(
+                project,
+                [
+                    "TPSample.Input.Math.Normalize",
+                    "TPSample.Input.Math.DeadZone",
+                    "TPSample.Input.Math.Quantize",
+                ],
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            result = _run_verifier(project, artifacts)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
+            self.assertTrue(verifier_result["passed"])
+
     def test_verifier_rejects_missing_test_module_even_when_report_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -143,6 +166,50 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDeadZone, "TPSample.Input.Math.DeadZone", EAut
 bool FDeadZone::RunTest(const FString& Parameters) { TestTrue(TEXT("ok"), true); return true; }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FQuantize, "TPSample.Input.Math.Quantize", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FQuantize::RunTest(const FString& Parameters) { TestTrue(TEXT("ok"), true); return true; }
+""".strip(),
+        encoding="utf-8",
+    )
+    descriptor = json.loads((project / "TPSample.uproject").read_text(encoding="utf-8"))
+    descriptor["Modules"].append({"Name": "TPSampleTest", "Type": "Editor", "LoadingPhase": "Default"})
+    (project / "TPSample.uproject").write_text(json.dumps(descriptor, indent=2), encoding="utf-8")
+
+
+def _write_test_module_alternative(project: Path) -> None:
+    module = project / "Source" / "TPSampleTest"
+    private = module / "Private"
+    private.mkdir(parents=True)
+    (module / "TPSampleTest.Build.cs").write_text(
+        """
+using UnrealBuildTool;
+
+public class TPSampleTest : ModuleRules
+{
+    public TPSampleTest(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PrivateDependencyModuleNames.AddRange(new string[] {
+            "Core",
+            "CoreUObject",
+            "Engine",
+            "UnrealEd",
+            "TPSample"
+        });
+    }
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (private / "InputMathTest.cpp").write_text(
+        """
+#include "Misc/AutomationTest.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNormalize, "TPSample.Input.Math.Normalize", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+bool FNormalize::RunTest(const FString& Parameters) { TestTrue(TEXT("ok"), true); return true; }
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDeadZone, "TPSample.Input.Math.DeadZone", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::EngineFilter)
+bool FDeadZone::RunTest(const FString& Parameters) { TestTrue(TEXT("ok"), true); return true; }
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FQuantize, "TPSample.Input.Math.Quantize", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::EngineFilter)
 bool FQuantize::RunTest(const FString& Parameters) { TestTrue(TEXT("ok"), true); return true; }
 """.strip(),
         encoding="utf-8",

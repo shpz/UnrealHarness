@@ -105,14 +105,17 @@ def _source_checks(project_path: Path) -> list[dict]:
     combined = "\n".join(_read_text(path) for path in test_files)
     names = re.findall(r'"(TPSample\.Input\.Math\.[^"]+)"', combined)
     uses_supported_flags = (
-        "EAutomationTestFlags::EditorContext" in combined
-        and "EAutomationTestFlags::EngineFilter" in combined
-        and "ApplicationContextMask" not in combined
+        "EAutomationTestFlags::EngineFilter" in combined
+        and "EAutomationTestFlags::ProductFilter" not in combined
+        and (
+            "EAutomationTestFlags::ApplicationContextMask" in combined
+            or "EAutomationTestFlags::EditorContext" in combined
+        )
     )
     return [
         {
             "name": "math_test_source_exists",
-            "passed": any(path.name == "TPSampleInputMathTest.cpp" for path in test_files),
+            "passed": any("InputMath" in path.name and path.name.endswith("Test.cpp") for path in test_files),
         },
         {
             "name": "math_test_source_defines_three_tests",
@@ -120,7 +123,7 @@ def _source_checks(project_path: Path) -> list[dict]:
             "details": ", ".join(sorted(set(names))),
         },
         {
-            "name": "math_tests_use_editor_engine_flags",
+            "name": "math_tests_use_supported_flags",
             "passed": uses_supported_flags,
         },
     ]
@@ -135,7 +138,7 @@ def _first_failure_class(checks: list[dict], executed_tests: int) -> str | None:
         "test_module_dependencies",
         "math_test_source_exists",
         "math_test_source_defines_three_tests",
-        "math_tests_use_editor_engine_flags",
+        "math_tests_use_supported_flags",
     }
     for check in checks:
         if check["passed"]:
