@@ -32,6 +32,7 @@ class Adapter(ABC):
         artifacts_dir: Path,
         timeout_minutes: int,
         task_dir: Optional[Path] = None,
+        project_junction: Optional[Path] = None,
     ) -> AdapterResult:
         ...
 
@@ -45,6 +46,7 @@ class OracleAdapter(Adapter):
         artifacts_dir: Path,
         timeout_minutes: int,
         task_dir: Optional[Path] = None,
+        project_junction: Optional[Path] = None,
     ) -> AdapterResult:
         oracle_dir = task_dir or instruction_path.parent
         patch_file = oracle_dir / "oracle.patch"
@@ -116,6 +118,7 @@ class NoopAdapter(Adapter):
         artifacts_dir: Path,
         timeout_minutes: int,
         task_dir: Optional[Path] = None,
+        project_junction: Optional[Path] = None,
     ) -> AdapterResult:
         return AdapterResult(
             exit_code=0,
@@ -134,6 +137,7 @@ class ManualAdapter(Adapter):
         artifacts_dir: Path,
         timeout_minutes: int,
         task_dir: Optional[Path] = None,
+        project_junction: Optional[Path] = None,
     ) -> AdapterResult:
         print(f"\n[ManualAdapter] Workspace: {workspace_root}")
         print(f"[ManualAdapter] Instruction: {instruction_path}")
@@ -178,9 +182,10 @@ class CodexAdapter(Adapter):
         artifacts_dir: Path,
         timeout_minutes: int,
         task_dir: Optional[Path] = None,
+        project_junction: Optional[Path] = None,
     ) -> AdapterResult:
         codex_js = self._find_codex_js()
-        project_path = workspace_root / "TPSample"
+        project_path = project_junction if project_junction else workspace_root / "TPSample"
 
         prompt_parts = [instruction_path.read_text(encoding="utf-8")]
         if skills_root and skills_root.exists():
@@ -311,9 +316,10 @@ class KimiCodeAdapter(Adapter):
         artifacts_dir: Path,
         timeout_minutes: int,
         task_dir: Optional[Path] = None,
+        project_junction: Optional[Path] = None,
     ) -> AdapterResult:
         kimi = self._find_kimi()
-        project_path = workspace_root / "TPSample"
+        project_path = project_junction if project_junction else workspace_root / "TPSample"
 
         # Build prompt from instruction + skills context
         prompt_parts = [instruction_path.read_text(encoding="utf-8")]

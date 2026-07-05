@@ -255,6 +255,7 @@ def cmd_run_single(args: argparse.Namespace) -> int:
         print(f"Unknown adapter: {adapter_name}", file=sys.stderr)
         return 1
 
+    project_junction = Path(layout["project_junction"]) if layout.get("project_junction") else None
     adapter_result = adapter.run(
         workspace_root=workspace_root,
         instruction_path=workspace_instruction,
@@ -262,6 +263,7 @@ def cmd_run_single(args: argparse.Namespace) -> int:
         artifacts_dir=artifacts_path,
         timeout_minutes=args.timeout_minutes,
         task_dir=task_dir,
+        project_junction=project_junction,
     )
 
     # Git diff
