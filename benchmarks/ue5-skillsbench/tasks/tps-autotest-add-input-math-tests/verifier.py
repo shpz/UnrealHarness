@@ -104,12 +104,15 @@ def _source_checks(project_path: Path) -> list[dict]:
     test_files = list((project_path / "Source" / "TPSampleTest" / "Private").glob("*.cpp"))
     combined = "\n".join(_read_text(path) for path in test_files)
     names = re.findall(r'"(TPSample\.Input\.Math\.[^"]+)"', combined)
+    # UE exposes automation flags both as enum values (EAutomationTestFlags::X) and bitmask macros
+    # (EAutomationTestFlags_X). Normalize macros to enum form before checking.
+    normalized = combined.replace("EAutomationTestFlags_", "EAutomationTestFlags::")
     uses_supported_flags = (
-        "EAutomationTestFlags::EngineFilter" in combined
-        and "EAutomationTestFlags::ProductFilter" not in combined
+        "EAutomationTestFlags::EngineFilter" in normalized
+        and "EAutomationTestFlags::ProductFilter" not in normalized
         and (
-            "EAutomationTestFlags::ApplicationContextMask" in combined
-            or "EAutomationTestFlags::EditorContext" in combined
+            "EAutomationTestFlags::ApplicationContextMask" in normalized
+            or "EAutomationTestFlags::EditorContext" in normalized
         )
     )
     return [

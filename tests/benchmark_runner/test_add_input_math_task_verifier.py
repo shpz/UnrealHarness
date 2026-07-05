@@ -84,6 +84,29 @@ class AddInputMathTaskVerifierTests(unittest.TestCase):
             verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
             self.assertTrue(verifier_result["passed"])
 
+    def test_verifier_accepts_macro_form_automation_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "TPSample"
+            _write_project_shell(project)
+            _write_test_module_with_macro_flags(project)
+            _write_report(
+                project,
+                [
+                    "TPSample.Input.Math.Normalize",
+                    "TPSample.Input.Math.DeadZone",
+                    "TPSample.Input.Math.Quantize",
+                ],
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            result = _run_verifier(project, artifacts)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
+            self.assertTrue(verifier_result["passed"])
+
     def test_verifier_rejects_missing_test_module_even_when_report_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -176,6 +199,20 @@ bool FQuantize::RunTest(const FString& Parameters) { TestTrue(TEXT("ok"), true);
 
 
 def _write_test_module_alternative(project: Path) -> None:
+    _write_test_module_with_flags(
+        project,
+        flag="EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::EngineFilter",
+    )
+
+
+def _write_test_module_with_macro_flags(project: Path) -> None:
+    _write_test_module_with_flags(
+        project,
+        flag="EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter",
+    )
+
+
+def _write_test_module_with_flags(project: Path, flag: str) -> None:
     module = project / "Source" / "TPSampleTest"
     private = module / "Private"
     private.mkdir(parents=True)
@@ -200,17 +237,17 @@ public class TPSampleTest : ModuleRules
         encoding="utf-8",
     )
     (private / "InputMathTest.cpp").write_text(
-        """
+        f"""
 #include "Misc/AutomationTest.h"
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNormalize, "TPSample.Input.Math.Normalize", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::EngineFilter)
-bool FNormalize::RunTest(const FString& Parameters) { TestTrue(TEXT("ok"), true); return true; }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNormalize, "TPSample.Input.Math.Normalize", {flag})
+bool FNormalize::RunTest(const FString& Parameters) {{ TestTrue(TEXT("ok"), true); return true; }}
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDeadZone, "TPSample.Input.Math.DeadZone", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::EngineFilter)
-bool FDeadZone::RunTest(const FString& Parameters) { TestTrue(TEXT("ok"), true); return true; }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDeadZone, "TPSample.Input.Math.DeadZone", {flag})
+bool FDeadZone::RunTest(const FString& Parameters) {{ TestTrue(TEXT("ok"), true); return true; }}
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FQuantize, "TPSample.Input.Math.Quantize", EAutomationTestFlags::ApplicationContextMask | EAutomationTestFlags::EngineFilter)
-bool FQuantize::RunTest(const FString& Parameters) { TestTrue(TEXT("ok"), true); return true; }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FQuantize, "TPSample.Input.Math.Quantize", {flag})
+bool FQuantize::RunTest(const FString& Parameters) {{ TestTrue(TEXT("ok"), true); return true; }}
 """.strip(),
         encoding="utf-8",
     )
