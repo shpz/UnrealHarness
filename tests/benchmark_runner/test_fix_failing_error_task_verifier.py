@@ -60,8 +60,31 @@ class FixFailingErrorTaskVerifierTests(unittest.TestCase):
             verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
             self.assertEqual(verifier_result["failure_class"], "cheating")
 
+    def test_verifier_accepts_alternative_helper_variable_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "TPSample"
+            _write_project_shell(project, helper_code="void ReportError() { for (const FErrorEvent& Existing : PendingErrors) { if (Existing.Code == Code) { return; } } }")
+            _write_test_module(project, strong_assertion=True)
+            _write_report(
+                project,
+                [
+                    "TPSample.Error.Accumulator.RecordsErrors",
+                    "TPSample.Error.Accumulator.FlushClearsQueue",
+                    "TPSample.Error.Accumulator.DedupesBroadcast",
+                ],
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
 
-def _write_project_shell(project: Path) -> None:
+            result = _run_verifier(project, artifacts)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
+            self.assertTrue(verifier_result["passed"])
+
+
+def _write_project_shell(project: Path, helper_code: str | None = None) -> None:
     source = project / "Source"
     (source / "TPSample" / "Private").mkdir(parents=True)
     (project / "TPSample.uproject").write_text(
@@ -82,8 +105,10 @@ def _write_project_shell(project: Path) -> None:
         'ExtraModuleNames.Add("TPSample");\nExtraModuleNames.Add("TPSampleTest");\n',
         encoding="utf-8",
     )
+    if helper_code is None:
+        helper_code = "void ReportError() { if (Event.Code == Code) { return; } }\n"
     (source / "TPSample" / "Private" / "TPSampleErrorAccumulator.cpp").write_text(
-        "void ReportError() { if (Event.Code == Code) { return; } }\n",
+        helper_code,
         encoding="utf-8",
     )
 

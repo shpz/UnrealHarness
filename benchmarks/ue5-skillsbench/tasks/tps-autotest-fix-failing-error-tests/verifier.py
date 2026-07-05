@@ -101,7 +101,7 @@ def _anti_cheat_checks(project_path: Path) -> list[dict]:
         {"name": "error_test_source_exists", "passed": test_path.exists(), "details": str(test_path)},
         {"name": "error_test_source_keeps_required_tests", "passed": REQUIRED_TESTS.issubset(declared_tests), "details": ", ".join(sorted(declared_tests))},
         {"name": "broadcast_assertion_not_weakened", "passed": strong_broadcast_assertion and ">= 0" not in text},
-        {"name": "production_helper_touched", "passed": "Event.Code == Code" in helper_text or "FindByPredicate" in helper_text},
+        {"name": "production_helper_touched", "passed": bool(re.search(r"\b\w+\.Code\s*==\s*Code\b", helper_text)) or "FindByPredicate" in helper_text},
         {"name": "test_source_no_early_success_shortcut", "passed": not any(pattern in text for pattern in weakened_patterns[:1])},
     ]
 
