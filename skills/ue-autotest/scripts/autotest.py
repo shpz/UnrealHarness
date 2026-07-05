@@ -222,50 +222,30 @@ def _scope_matches_prefix(scope: str, prefix: str) -> bool:
 
 def filter_modules(
     modules: list[str],
-    scope: str,
+    scopes: list[str],
     project_dir: Path,
     module_categories: dict[str, str],
 ) -> list[str]:
-    """按 scope 过滤模块：all / 模块名 / 分类关键字 / 自动化前缀通配。"""
-    if scope == "all":
+    """按 scope 列表过滤模块：all / 模块名 / 分类关键字 / 自动化前缀通配。"""
+    known_categories = set(module_categories.values())
+    if "all" in scopes or not scopes:
         return modules
 
-    # scope 精确匹配模块名
-    if scope in modules:
-        return [scope]
+    result: set[str] = set()
+    for scope in scopes:
+        if scope in modules:
+            result.add(scope)
+            continue
+        if scope in known_categories:
+            result.update(m for m in modules if module_categories.get(m) == scope)
+            continue
+        for mod in modules:
+            prefix = re.sub(r"Test$", "", mod)
+            automation_prefix = get_module_automation_prefix(project_dir, mod)
+            if _scope_matches_prefix(scope, prefix) or _scope_matches_prefix(scope, automation_prefix):
+                result.add(mod)
 
-    # 分类关键字匹配（unit / integration / performance 等）
-    known_categories = set(module_categories.values())
-    if scope in known_categories:
-        matched = [m for m in modules if module_categories.get(m) == scope]
-        if not matched:
-            _error_exit(
-                f"没有模块属于分类 '{scope}'。"
-                f"已知分类：{', '.join(sorted(known_categories))}"
-            )
-        return matched
-
-    # 前缀匹配：scope 可以是模块测试前缀的前缀，反之亦然。
-    # 例如 scope "MyProject" 匹配模块 "MyProjectTest"（前缀 "MyProject"）；
-    # scope "MyProject.AI" 同样匹配（以前缀开头）。
-    candidates: list[tuple[str, int]] = []
-    for mod in modules:
-        prefix = re.sub(r"Test$", "", mod)
-        automation_prefix = get_module_automation_prefix(project_dir, mod)
-        if _scope_matches_prefix(scope, prefix) or _scope_matches_prefix(scope, automation_prefix):
-            candidates.append((mod, len(automation_prefix)))
-
-    filtered: list[str] = []
-    if candidates:
-        max_prefix_length = max(length for _, length in candidates)
-        filtered = [name for name, length in candidates if length == max_prefix_length]
-
-    if not filtered:
-        # 回退：对模块名本身做通配符匹配
-        wildcard = re.escape(scope).replace(r"\*", ".*").replace(r"\?", ".")
-        filtered = [m for m in modules if re.fullmatch(wildcard, m)]
-
-    return filtered
+    return sorted(result)
 
 
 # ── 4. 发现自动化测试前缀 ─────────────────────────────────────────────────────
@@ -363,25 +343,34 @@ def reduce_filters(filters: list[str]) -> list[str]:
         )
         if not covered:
             reduced.append(candidate)
-    return reduced
+    return sorted(reduced)
 
 
 def build_run_filters(
     modules: list[str],
     module_prefixes: dict[str, str],
-    scope: str,
+    scopes: list[str],
 ) -> list[str]:
     """确定本次运行的过滤器集合。
 
-    scope 为通配前缀（非 all、非模块名）时直接使用 scope 过滤器；
-    否则汇总各模块的自动化前缀并归并去重。
+    支持多个 scope：all 时汇总所有模块前缀；模块名时使用其自动化前缀；
+    通配前缀则转换为对应过滤器，最终归并去重。
     """
-    if scope and scope != "all" and scope not in modules:
-        scope_filter = convert_scope_to_automation_filter(scope)
-        if scope_filter:
-            return [scope_filter]
-
-    return reduce_filters([module_prefixes[mod] for mod in modules])
+    filters: list[str] = []
+    for raw_scope in scopes:
+        for scope in raw_scope.split("+"):
+            scope = scope.strip()
+            if not scope:
+                continue
+            if scope == "all":
+                filters.extend(module_prefixes[mod] for mod in modules)
+            elif scope in modules:
+                filters.append(module_prefixes[scope])
+            else:
+                scope_filter = convert_scope_to_automation_filter(scope)
+                if scope_filter:
+                    filters.append(scope_filter)
+    return reduce_filters(filters)
 
 
 # ── 7. 引擎路径解析（复用 ue-build 逻辑）─────────────────────────────────────
@@ -739,19 +728,19 @@ def invoke_test_run(
     modules: list[str],
     config: dict[str, Any],
     project_dir: Path,
-    scope: str,
+    scopes: list[str],
     no_null_rhi: bool,
 ) -> dict[str, Any]:
     """单次启动编辑器运行所有过滤器，并将结果按模块归属汇总。"""
     module_prefixes = {
         mod: get_module_automation_prefix(project_dir, mod) for mod in modules
     }
-    filters = build_run_filters(modules, module_prefixes, scope)
+    filters = build_run_filters(modules, module_prefixes, scopes)
     if not filters:
         _error_exit("未能从模块或 scope 推导出任何测试过滤器。")
 
-    run_label = scope if scope and scope != "all" else "All"
-    run_label = re.sub(r'[<>:"/\\|?*]', "_", run_label)
+    run_label = "_".join(scopes) if scopes and scopes != ["all"] else "All"
+    run_label = re.sub(r'[<>?:"/\\|?*+ ]', "_", run_label)
     run_result = run_tests(
         project_file, engine_path, run_label, filters, config, no_null_rhi
     )
@@ -831,10 +820,12 @@ def main() -> int:
     parser.add_argument(
         "--scope", "-s",
         metavar="范围",
-        default="all",
+        action="append",
+        default=[],
         help=(
             '测试范围（默认：all）。可为 "all"、模块名、'
-            '自动化前缀通配（如 "MyProject.AI.*"）或分类关键字（unit/integration/performance）'
+            '自动化前缀通配（如 "MyProject.AI.*"）或分类关键字（unit/integration/performance）。'
+            '可多次指定以运行多个 scope，或用 "+" 连接多个 scope。'
         ),
     )
     parser.add_argument(
@@ -855,6 +846,16 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    raw_scopes = args.scope if args.scope else ["all"]
+    normalized_scopes: list[str] = []
+    for scope in raw_scopes:
+        for part in scope.split("+"):
+            part = part.strip()
+            if part:
+                normalized_scopes.append(part)
+    if not normalized_scopes:
+        normalized_scopes = ["all"]
+
     # ── 加载配置 ──
     config = load_config(_SKILL_ROOT / "config.yaml")
 
@@ -868,10 +869,10 @@ def main() -> int:
         _error_exit(f"未找到匹配的测试模块：{config['testModulePattern']}")
 
     modules = filter_modules(
-        all_modules, args.scope, project_dir, config["moduleCategories"]
+        all_modules, normalized_scopes, project_dir, config["moduleCategories"]
     )
     if not modules:
-        _error_exit(f"没有模块匹配 scope：{args.scope}")
+        _error_exit(f"没有模块匹配 scope：{normalized_scopes}")
 
     _color_print(f"待运行的测试模块：{', '.join(modules)}", _COLOR_GREEN)
 
@@ -885,7 +886,7 @@ def main() -> int:
     # ── 逐模块运行测试 ──
     all_results = invoke_test_run(
         project_file, engine_path, modules, config, project_dir,
-        args.scope, args.no_null_rhi,
+        normalized_scopes, args.no_null_rhi,
     )
 
     # ── 保存合并结果 ──
