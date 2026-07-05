@@ -94,6 +94,18 @@ bool FMyFeatureHappyPathTest::RunTest(const FString& Parameters)
 python "<skill-root>/scripts/autotest.py" --project "<项目目录或.uproject>" --scope "<范围>"
 ```
 
+多个 scope 可以一次运行：
+
+```bash
+python "<skill-root>/scripts/autotest.py" --project "<项目目录>" --scope "MyProject.Input.*" --scope "MyProject.Error.*"
+```
+
+或用 `+` 连接：
+
+```bash
+python "<skill-root>/scripts/autotest.py" --project "<项目目录>" --scope "MyProject.Input.*+MyProject.Error.*"
+```
+
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
 | `--project`, `-p` | 项目目录或 `.uproject` 文件 | 自动检测当前目录 |
