@@ -40,6 +40,34 @@ class ScopedReportTaskVerifierTests(unittest.TestCase):
             self.assertTrue(verifier_result["passed"])
             self.assertEqual(verifier_result["automation"]["executed_tests"], 6)
 
+    def test_verifier_accepts_skill_generated_markdown_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "TPSample"
+            project.mkdir()
+            _init_git(project)
+            _write_report(
+                project,
+                [
+                    "TPSample.Input.Math.Normalize",
+                    "TPSample.Input.Math.DeadZone",
+                    "TPSample.Input.Math.Quantize",
+                    "TPSample.Error.Accumulator.Add",
+                    "TPSample.Error.Accumulator.Flush",
+                    "TPSample.Error.Accumulator.Dedupe",
+                ],
+            )
+            (project / "Saved" / "Automation" / "Reports" / "2026-07-05-120000-autotest-report.md").write_text(
+                "# UE5 Automation Test Report\n\n## Summary\n\n| Metric | Value |\n| Total Tests | 6 |\n| Passed | 6 |\n| Failed | 0 |\n\n> All tests passed.",
+                encoding="utf-8",
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            result = _run_verifier(project, artifacts)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_verifier_rejects_performance_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

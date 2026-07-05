@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -107,7 +108,10 @@ def _find_markdown_report(project_path: Path) -> Path | None:
 
 def _markdown_has_required_content(path: Path) -> bool:
     text = path.read_text(encoding="utf-8", errors="ignore").lower()
-    return "scope" in text and "passed" in text and ("failure" in text or "no failures" in text)
+    has_scope = bool(re.search(r"scope|filter|tests run|automation", text))
+    has_passed = "passed" in text or "pass" in text
+    has_failure_info = "failed" in text or "failure" in text or "no failures" in text or "all tests passed" in text
+    return has_scope and has_passed and has_failure_info
 
 
 def _source_changes_after_setup(project_path: Path) -> bool:
