@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from .verifier_result import make_result, validate_result_schema, write_result
+
 
 def run_verifier(
     verifier_script: Path,
@@ -54,7 +56,34 @@ def run_verifier(
         try:
             verifier_json = json.loads(verifier_result_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
-            verifier_json = {"passed": False, "failureClass": "verifier-error", "error": str(e)}
+            verifier_json = make_result(
+                passed=False,
+                failure_class="verifier-error",
+                checks=[{"name": "verifier_result_json", "passed": False, "details": str(e)}],
+            )
+            write_result(verifier_result_path, verifier_json)
+        else:
+            schema_errors = validate_result_schema(verifier_json)
+            if schema_errors:
+                verifier_json = make_result(
+                    passed=False,
+                    failure_class="verifier-error",
+                    checks=[
+                        {
+                            "name": "verifier_result_schema",
+                            "passed": False,
+                            "details": "; ".join(schema_errors),
+                        }
+                    ],
+                )
+                write_result(verifier_result_path, verifier_json)
+    else:
+        verifier_json = make_result(
+            passed=False,
+            failure_class="verifier-error",
+            checks=[{"name": "verifier_result_missing", "passed": False, "details": str(verifier_result_path)}],
+        )
+        write_result(verifier_result_path, verifier_json)
 
     return {
         "exit_code": result.returncode,

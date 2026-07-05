@@ -1,6 +1,7 @@
 id = "tps-build-incremental"
 project = "TPSample"
 timeout_minutes = 45
+benchmark_role = "smoke"
 primary_skills = ["ue-build"]
 
 [metadata]
@@ -8,3 +9,14 @@ difficulty = "easy"
 category = "software-engineering"
 subcategory = "incremental-build"
 tags = ["unreal-engine", "ue5", "ubt", "incremental-build", "development"]
+
+[oracle]
+type = "none"
+
+[verifier]
+type = "python"
+path = "verifier.py"
+timeout_minutes = 45
+
+[artifacts]
+required = ["verifier_result.json", "build.log"]

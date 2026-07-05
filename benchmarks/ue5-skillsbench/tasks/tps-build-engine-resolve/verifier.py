@@ -42,6 +42,15 @@ def main():
             failure_class = "build"
 
         passed = failure_class is None
+    except RuntimeError as e:
+        passed = False
+        detail = str(e)
+        if "EngineAssociation" in detail and ("Could not resolve" in detail or "Missing" in detail):
+            failure_class = "build"
+            checks.append({"name": "engine_resolution", "passed": False, "detail": detail})
+        else:
+            failure_class = "verifier-error"
+            checks.append({"name": "verifier_exception", "passed": False, "detail": detail})
     except Exception as e:
         passed = False
         failure_class = "verifier-error"

@@ -74,12 +74,14 @@ This repository includes `benchmarks/ue5-skillsbench/` — a standardized benchm
 ### Run Benchmark
 
 ```bash
-# Run via Python module
-python -m benchmarks.ue5-skillsbench.runner
-
-# Or run from the directory
-python -m runner
+python -m benchmarks.ue5-skillsbench.runner preflight
+python -m benchmarks.ue5-skillsbench.runner validate-task --task-id tps-build-engine-resolve --repeat 3
+python -m benchmarks.ue5-skillsbench.runner run-single --task-id tps-build-engine-resolve --condition ue-build-only --adapter codex
+python -m benchmarks.ue5-skillsbench.runner run-matrix --adapter codex --run-id <run-id>
+python -m benchmarks.ue5-skillsbench.runner report --run-id <run-id>
 ```
+
+`run-matrix` supports `--task-id`, `--task-filter`, `--condition`, and `--trials` to control task, condition, and trial selection.
 
 ### Task Types
 
@@ -87,7 +89,12 @@ python -m runner
 - **Build Repair** — Fix deliberately introduced compilation errors
 - **Multi-Module Builds** — Validate cross-module compilation capability
 
-For more details, see the `benchmarks/ue5-skillsbench/` directory.
+For more details, see `docs/ue5-skillsbench-framework-completion-design.md`. The old MVP plan is archived under `docs/archived/ue5-skillsbench-mvp/` and is no longer the implementation source of truth.
+
+Operational docs:
+
+- `docs/ue5-skillsbench-runbook.md`
+- `docs/ue5-skillsbench-task-authoring-guide.md`
 
 ## Requirements
 

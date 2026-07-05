@@ -1,0 +1,35 @@
+id = "tps-autotest-run-scoped-report"
+project = "TPSample"
+timeout_minutes = 60
+benchmark_role = "formal"
+primary_skills = ["ue-autotest"]
+secondary_skills = ["ue-build"]
+
+[metadata]
+difficulty = "medium"
+category = "software-engineering"
+subcategory = "automation-execution-reporting"
+task_type = ["verification", "reporting"]
+modality = ["source-code", "runtime-artifact"]
+interface = ["terminal", "compiler-toolchain"]
+skill_type = ["tool-workflow", "debugging-heuristic"]
+tags = ["unreal-engine", "ue5", "automation", "scope", "reporting"]
+
+[oracle]
+type = "action"
+path = "oracle.py"
+repeat = 3
+
+[verifier]
+type = "python"
+path = "verifier.py"
+timeout_minutes = 60
+
+[artifacts]
+required = [
+  "verifier_result.json",
+  "automation/index.json",
+  "automation/autotest_results.json",
+  "automation/report.md",
+  "automation/editor.log",
+]

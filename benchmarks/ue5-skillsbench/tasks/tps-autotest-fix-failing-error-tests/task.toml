@@ -1,0 +1,34 @@
+id = "tps-autotest-fix-failing-error-tests"
+project = "TPSample"
+timeout_minutes = 60
+benchmark_role = "formal"
+primary_skills = ["ue-autotest"]
+secondary_skills = ["ue-build"]
+
+[metadata]
+difficulty = "medium-hard"
+category = "software-engineering"
+subcategory = "automation-failure-repair"
+task_type = ["debugging", "verification"]
+modality = ["source-code", "runtime-artifact"]
+interface = ["terminal", "compiler-toolchain"]
+skill_type = ["tool-workflow", "debugging-heuristic"]
+tags = ["unreal-engine", "ue5", "automation", "debugging", "regression"]
+
+[oracle]
+type = "action"
+path = "oracle.py"
+repeat = 3
+
+[verifier]
+type = "python"
+path = "verifier.py"
+timeout_minutes = 60
+
+[artifacts]
+required = [
+  "verifier_result.json",
+  "build.log",
+  "automation/index.json",
+  "automation/autotest_results.json",
+]

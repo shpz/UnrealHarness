@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
 from pathlib import Path
 
 from .adapter import CodexAdapter, KimiCodeAdapter, ManualAdapter, NoopAdapter, OracleAdapter
-from .config import BenchmarkConfig, ConditionConfig, discover_tasks, load_benchmark_yaml
+from .automation_artifacts import collect_automation_artifacts
+from .config import BenchmarkConfig, ConditionConfig, TaskConfig, discover_tasks, load_benchmark_yaml, load_task_toml
 from .metrics import capture_filtered_git_diff, capture_git_diff, diff_metrics, git_add_untracked
 from .preflight import run_preflight
 from .report import make_report
@@ -28,6 +30,127 @@ def _benchmark_root() -> Path:
 
 def _run_id_now() -> str:
     return time.strftime("%Y%m%d-%H%M%S")
+
+
+def select_matrix_tasks(
+    tasks: list[TaskConfig],
+    task_ids: list[str] | None = None,
+    task_filters: list[str] | None = None,
+) -> list[TaskConfig]:
+    task_ids = task_ids or []
+    task_filters = task_filters or []
+    by_id = {task.id: task for task in tasks}
+
+    if task_ids:
+        missing = [task_id for task_id in task_ids if task_id not in by_id]
+        if missing:
+            raise RuntimeError(f"Unknown task id(s): {', '.join(missing)}")
+        selected = [by_id[task_id] for task_id in task_ids]
+    else:
+        selected = [task for task in tasks if task.benchmark_role == "formal"]
+
+    if task_filters:
+        filter_set = set(task_filters)
+        selected = [
+            task for task in selected
+            if task.metadata.subcategory in filter_set or any(tag in filter_set for tag in task.metadata.tags)
+        ]
+
+    return selected
+
+
+def select_matrix_conditions(
+    conditions: list[ConditionConfig],
+    condition_ids: list[str] | None = None,
+) -> list[ConditionConfig]:
+    condition_ids = condition_ids or []
+    by_id = {condition.id: condition for condition in conditions}
+    if not condition_ids:
+        return conditions
+    missing = [condition_id for condition_id in condition_ids if condition_id not in by_id]
+    if missing:
+        raise RuntimeError(f"Unknown condition id(s): {', '.join(missing)}")
+    return [by_id[condition_id] for condition_id in condition_ids]
+
+
+def validate_task_oracle_contract(task: TaskConfig, task_dir: Path) -> list[str]:
+    errors: list[str] = []
+    if task.benchmark_role == "smoke":
+        if task.oracle.type != "none":
+            errors.append("smoke tasks must use [oracle].type = \"none\"")
+        return errors
+
+    if task.benchmark_role != "formal":
+        errors.append(f"unknown benchmark_role: {task.benchmark_role}")
+        return errors
+
+    if task.oracle.type not in {"patch", "action"}:
+        errors.append("formal tasks must use [oracle].type = \"patch\" or \"action\"")
+        return errors
+
+    if not task.oracle.path:
+        errors.append("formal tasks must declare [oracle].path")
+        return errors
+
+    oracle_path = task_dir / task.oracle.path
+    if not oracle_path.exists():
+        errors.append(f"oracle file does not exist: {oracle_path}")
+    return errors
+
+
+def describe_skill_injection(
+    repo_root: Path,
+    workspace_root: Path,
+    config: BenchmarkConfig,
+    condition: ConditionConfig,
+    skills_root: Path | None,
+) -> dict:
+    skill_paths = {skill.name: skill.path for skill in config.skills}
+    injected = []
+    for skill_name in condition.skills:
+        source = repo_root / skill_paths.get(skill_name, f"skills/{skill_name}")
+        destination = (skills_root or workspace_root / "skills") / skill_name
+        injected.append({
+            "name": skill_name,
+            "source": str(source),
+            "destination": str(destination),
+        })
+    return {
+        "skills_injected": injected,
+        "skills_root": str(skills_root) if skills_root else None,
+        "skills_root_exists": bool(skills_root and skills_root.exists()),
+    }
+
+
+def duration_seconds_or_zero(metric: dict | None) -> float:
+    if not metric:
+        return 0.0
+    value = metric.get("duration_seconds")
+    return float(value) if value is not None else 0.0
+
+
+def matrix_trial_run_id(run_id: str, sequence: int) -> str:
+    return f"{run_id}-r{sequence:03d}"
+
+
+def validation_trial_run_id(run_id: str, phase: str, trial: int, max_length: int = 40) -> str:
+    phase_codes = {
+        "initial": "vi",
+        "oracle": "vo",
+    }
+    if phase not in phase_codes:
+        raise ValueError(f"Unknown validation phase: {phase}")
+
+    suffix = f"{phase_codes[phase]}{trial:03d}"
+    candidate = f"{run_id}-{suffix}"
+    if len(candidate) <= max_length:
+        return candidate
+
+    digest = hashlib.sha1(run_id.encode("utf-8")).hexdigest()[:8]
+    reserved_length = len(f"-{digest}-{suffix}")
+    prefix_length = max(1, max_length - reserved_length)
+    prefix = run_id[:prefix_length].rstrip("-")
+    return f"{prefix}-{digest}-{suffix}"
 
 
 def cmd_preflight(args: argparse.Namespace) -> int:
@@ -158,6 +281,8 @@ def cmd_run_single(args: argparse.Namespace) -> int:
         benchmark_root=benchmark_root,
         timeout_minutes=args.verifier_timeout,
     )
+    automation_artifacts = collect_automation_artifacts(project_path, artifacts_path)
+    skill_injection = describe_skill_injection(repo_root, workspace_root, config, condition, skills_root)
 
     overall_passed = (
         adapter_result.exit_code == 0
@@ -176,6 +301,7 @@ def cmd_run_single(args: argparse.Namespace) -> int:
         "task_id": args.task_id,
         "condition": args.condition,
         "trial": args.trial,
+        **skill_injection,
         "agent": {
             "name": adapter_name,
             "exit_code": adapter_result.exit_code,
@@ -192,16 +318,26 @@ def cmd_run_single(args: argparse.Namespace) -> int:
         "overall_passed": overall_passed,
         "failure_class": failure_class,
         "metrics": {
-            "wall_clock_seconds": round(adapter_result.adapter_wall_seconds + ((verifier_result["verifier_result"] or {}).get("build") or {}).get("duration_seconds", 0), 3),
+            "wall_clock_seconds": round(
+                adapter_result.adapter_wall_seconds
+                + duration_seconds_or_zero((verifier_result["verifier_result"] or {}).get("build")),
+                3,
+            ),
             "build_duration_seconds": ((verifier_result["verifier_result"] or {}).get("build") or {}).get("duration_seconds"),
             "files_changed": diff_metrics_result["files_changed"],
             "lines_added": diff_metrics_result["lines_added"],
             "lines_deleted": diff_metrics_result["lines_deleted"],
+            "automation_report_generated": bool(automation_artifacts),
+        },
+        "trajectory": {
+            "command_invocations": "unknown",
+            "skill_file_reads": "unknown",
         },
         "artifacts": {
             "workspace": str(project_path),
             "diff": str(diff_path),
             "verifier_result": str(artifacts_path / "verifier_result.json"),
+            "automation": [str(path) for path in automation_artifacts],
         },
     }
 
@@ -211,25 +347,97 @@ def cmd_run_single(args: argparse.Namespace) -> int:
     return 0 if overall_passed else 1
 
 
+def cmd_validate_task(args: argparse.Namespace) -> int:
+    repo_root = _repo_root()
+    benchmark_root = _benchmark_root()
+    config = load_benchmark_yaml(benchmark_root / "benchmark.yaml")
+    task_dir = benchmark_root / "tasks" / args.task_id
+    task_toml = task_dir / "task.toml"
+    if not task_toml.exists():
+        print(f"Task not found: {args.task_id}", file=sys.stderr)
+        return 1
+
+    task = load_task_toml(task_toml)
+    errors = validate_task_oracle_contract(task, task_dir)
+    if errors:
+        for error in errors:
+            print(f"Task oracle validation failed: {error}", file=sys.stderr)
+        return 1
+
+    condition = next((c for c in config.conditions if c.id == "no-skills"), None)
+    if condition is None:
+        print("validate-task requires a no-skills condition", file=sys.stderr)
+        return 1
+
+    run_id = args.run_id or _run_id_now()
+    for trial in range(1, args.repeat + 1):
+        initial_args = argparse.Namespace(
+            task_id=args.task_id,
+            condition="no-skills",
+            adapter="noop",
+            trial=trial,
+            run_id=validation_trial_run_id(run_id, "initial", trial),
+            skip_preflight=True,
+            timeout_minutes=args.timeout_minutes,
+            verifier_timeout=args.verifier_timeout,
+        )
+        initial_rc = cmd_run_single(initial_args)
+        initial_result_path = repo_root / config.runner.run_root / initial_args.run_id / "result.json"
+        if not initial_result_path.exists():
+            print(f"validate-task failed: setup or runner failed before verifier on trial {trial}", file=sys.stderr)
+            return 1
+        if initial_rc == 0:
+            print(f"validate-task failed: setup state passed before oracle on trial {trial}", file=sys.stderr)
+            return 1
+
+        oracle_args = argparse.Namespace(
+            task_id=args.task_id,
+            condition="no-skills",
+            adapter="oracle",
+            trial=trial,
+            run_id=validation_trial_run_id(run_id, "oracle", trial),
+            skip_preflight=True,
+            timeout_minutes=args.timeout_minutes,
+            verifier_timeout=args.verifier_timeout,
+        )
+        oracle_rc = cmd_run_single(oracle_args)
+        oracle_result_path = repo_root / config.runner.run_root / oracle_args.run_id / "result.json"
+        if not oracle_result_path.exists():
+            print(f"validate-task failed: oracle run did not produce result.json on trial {trial}", file=sys.stderr)
+            return 1
+        if oracle_rc != 0:
+            print(f"validate-task failed: oracle state did not pass on trial {trial}", file=sys.stderr)
+            return oracle_rc
+
+    return 0
+
+
 def cmd_run_matrix(args: argparse.Namespace) -> int:
     repo_root = _repo_root()
     benchmark_root = _benchmark_root()
     config = load_benchmark_yaml(benchmark_root / "benchmark.yaml")
     tasks_dir = benchmark_root / "tasks"
     tasks = discover_tasks(tasks_dir) if tasks_dir.exists() else []
-    task_ids = [t.id for t in tasks] if tasks else ["tps-env-build-smoke", "tps-build-auto-discover", "tps-build-engine-resolve"]
-    conditions = [c.id for c in config.conditions]
+    try:
+        selected_tasks = select_matrix_tasks(tasks, args.task_id, args.task_filter)
+        selected_conditions = select_matrix_conditions(config.conditions, args.condition)
+    except RuntimeError as e:
+        print(str(e), file=sys.stderr)
+        return 1
     run_id = args.run_id or _run_id_now()
+    trial_count = args.trials or config.runner.trials
 
     exit_codes = []
-    for task_id in task_ids:
-        for condition in conditions:
-            for trial in range(1, config.runner.trials + 1):
-                trial_run_id = f"{run_id}-{task_id}-{condition}-t{trial}"
+    sequence = 0
+    for task in selected_tasks:
+        for condition in selected_conditions:
+            for trial in range(1, trial_count + 1):
+                sequence += 1
+                trial_run_id = matrix_trial_run_id(run_id, sequence)
                 print(f"\n=== Running {trial_run_id} ===")
                 sub_args = argparse.Namespace(
-                    task_id=task_id,
-                    condition=condition,
+                    task_id=task.id,
+                    condition=condition.id,
                     adapter=args.adapter,
                     trial=trial,
                     run_id=trial_run_id,
@@ -278,9 +486,21 @@ def main() -> int:
     p.add_argument("--verifier-timeout", type=int, default=30)
     p.set_defaults(func=cmd_run_single)
 
+    p = sub.add_parser("validate-task", help="Validate setup failure and oracle success")
+    p.add_argument("--task-id", required=True)
+    p.add_argument("--repeat", type=int, default=3)
+    p.add_argument("--run-id", default=None)
+    p.add_argument("--timeout-minutes", type=int, default=45)
+    p.add_argument("--verifier-timeout", type=int, default=30)
+    p.set_defaults(func=cmd_validate_task)
+
     p = sub.add_parser("run-matrix", help="Run full task/condition/trial matrix")
     p.add_argument("--adapter", choices=["oracle", "manual", "noop", "codex", "kimi-code"], required=True)
     p.add_argument("--run-id", default=None)
+    p.add_argument("--task-id", action="append", default=[])
+    p.add_argument("--task-filter", action="append", default=[])
+    p.add_argument("--condition", action="append", default=[])
+    p.add_argument("--trials", type=int, default=None)
     p.set_defaults(func=cmd_run_matrix)
 
     p = sub.add_parser("report", help="Generate report from previous run")

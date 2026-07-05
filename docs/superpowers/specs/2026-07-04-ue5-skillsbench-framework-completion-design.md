@@ -101,7 +101,7 @@ python -m benchmarks.ue5-skillsbench.runner report --run-id <id>
 `run-matrix` 新增过滤参数：
 
 - `--task-id <id>`：可重复。
-- `--task-filter <tag|subcategory>`：按 `task.toml` 中的 tag 或 subcategory 过滤。
+- `--task-filter <tag|subcategory>`：可重复，精确匹配 `task.toml` 中的 `metadata.subcategory` 或 `metadata.tags`，大小写敏感；多个 filter 之间是 OR。
 - `--condition <id>`：可重复。
 - `--trials N`：覆盖 `benchmark.yaml` 默认值。
 - `--run-id <id>`：标识一次矩阵运行。
@@ -120,6 +120,7 @@ oracle → verifier 通过
 
 - 任务声明了 oracle 但 `oracle.patch` / `oracle.py` 缺失时，必须判为验收失败，不允许静默降级为 noop。
 - `type = "none"` 的 smoke 任务调用 `validate-task` 时直接报错退出，提示该任务不参与 oracle 验收。
+- Phase A 的 `validate-task` 验收对象必须是已补齐 `[oracle]` 和 oracle 文件的正式 build task；不能把尚未声明 oracle 的旧任务当作可验收对象。
 
 ### 4.2 Config (`benchmark.yaml`)
 
@@ -199,7 +200,29 @@ workspaces/<run-id>/<task-id>/<condition>/<trial-N>/
 
 #### 4.4.1 统一输出结构
 
-所有 verifier 通过共享 helper 构造并写出 `verifier_result.json`：
+所有 verifier 通过共享 helper 构造并写出 `verifier_result.json`。共享 helper 位于 `benchmarks/ue5-skillsbench/runner/verifier_result.py`，任务 verifier 通过把 runner 目录加入 `sys.path` 后导入使用：
+
+```python
+from verifier_result import make_result, write_result
+
+result = make_result(
+    passed=False,
+    failure_class="automation-discovery",
+    checks=[{"name": "automation_scope", "passed": False, "details": "0 tests discovered"}],
+    automation={"executed_tests": 0, "report_parser": "native-index-json"},
+)
+write_result(artifacts_path / "verifier_result.json", result)
+```
+
+helper API：
+
+- `make_result(passed, failure_class, checks, build=None, automation=None, artifacts=None, **extra) -> dict`：构造标准结果，允许任务追加额外字段。
+- `validate_result_schema(result: dict) -> list[str]`：校验必需顶层字段和基础类型，返回错误列表；未知字段不报错。
+- `write_result(path: Path, result: dict) -> None`：先调用 schema 校验，校验失败时抛出明确异常；通过后写入 UTF-8 JSON。
+
+Runner 的 `run_verifier` 在读取 `verifier_result.json` 后必须再次调用 `validate_result_schema`。若文件缺失、JSON 损坏或 schema 不合法，trial 判为 `verifier-error`，并在 artifacts 中写出规范的 `verifier_result.json`，其中包含失败原因。
+
+标准输出结构：
 
 ```json
 {
@@ -389,6 +412,7 @@ benchmarks/ue5-skillsbench/tasks/<task-id>/
 id = "tps-autotest-add-input-math-tests"
 project = "TPSample"
 timeout_minutes = 45
+benchmark_role = "formal" # formal | smoke
 primary_skills = ["ue-autotest"]
 secondary_skills = ["ue-build"]
 
@@ -422,7 +446,14 @@ required = [
 ]
 ```
 
-这些字段不必一次性全由 runner 强制校验，但文档和 task authoring 应先统一。
+`benchmark_role` 定义任务是否进入正式 skill impact 统计：
+
+- `formal`：正式 benchmark 任务，必须声明 `[oracle]`，且 oracle type 只能是 `patch` 或 `action`；参与 `run-matrix` 默认任务集和 skill impact 报告。
+- `smoke`：环境或管线检查任务，`[oracle].type` 必须为 `none`；不参与 skill impact 报告，调用 `validate-task` 时直接失败并提示该任务不可验收。
+
+为兼容旧任务，缺失 `benchmark_role` 时 runner 暂按 `formal` 处理并给出 warning；Phase A 必须显式补齐所有现有 task 的 `benchmark_role` 和 `[oracle]` 字段。
+
+这些字段不必一次性全由 runner 强制校验，但文档和 task authoring 应先统一。Phase A 至少强制校验 `benchmark_role`、`[oracle].type`，并在 oracle type 为 `patch` 或 `action` 时校验 `[oracle].path` 与 oracle 文件存在性。
 
 ### 5.3 `result.json`
 
@@ -477,14 +508,16 @@ required = [
 | `run-matrix` | 按配置跑完整矩阵 | `--adapter`, `--run-id`, `--task-id`, `--task-filter`, `--condition`, `--trials` |
 | `report` | 生成报告 | `--run-id` |
 
+`run-matrix` 默认只选择 `benchmark_role = "formal"` 的任务；需要运行 smoke 任务时必须显式传入 `--task-id`。`report` 的 skill impact 聚合只纳入 formal 任务，smoke 任务若出现在同一 run id 中，只在原始 results JSON 中保留，不进入 pass-rate gain / normalized gain 汇总。
+
 ## 7. Task Catalog
 
 ### 7.1 Build 任务
 
 | 任务 ID | 处理 |
 | --- | --- |
-| `tps-build-basic` | 标记为 smoke，不计入正式 skill impact 统计 |
-| `tps-build-engine-resolve` | 保留为正式 `ue-build` 任务 |
+| `tps-build-basic` | Phase A 显式设置 `benchmark_role = "smoke"` 与 `[oracle].type = "none"`，不计入正式 skill impact 统计 |
+| `tps-build-engine-resolve` | 保留为正式 `ue-build` 任务；Phase A 必须补齐 `[oracle]` 与 `oracle.patch`，作为 `validate-task --repeat 3` 的验收对象 |
 | `tps-build-incremental` | 暂保留为正式任务；Phase A 验收时确认其 setup/verifier 是否构造了 skill 敏感场景。若否，降级为 smoke，需再新增一个 repair 型任务补足 3 个正式 build 任务 |
 | `tps-build-fix-module-dependency`（新增） | 正式任务：setup 注入 module dependency / `Build.cs` / `Target.cs` 缺陷导致编译或链接失败，agent 需定位并修复 |
 
@@ -523,6 +556,11 @@ tests/benchmark_runner/
 
 这些测试不证明 UE 行为正确，但能防止 runner 结构回归。
 
+测试落地分两档：
+
+- Phase A 必须新增最小 runner 自测，覆盖 config 多 skill/condition、task discovery、`benchmark_role`/oracle 字段解析、verifier schema 校验、`run-matrix` 过滤选择逻辑。
+- Phase E 负责扩展覆盖 report aggregation、failure detail、skill injection artifact 记录，以及把测试命令固定到本地 CI 或手动 runbook。
+
 ## 9. Milestones
 
 ### Phase A：框架协议固化
@@ -530,10 +568,12 @@ tests/benchmark_runner/
 - 更新 `benchmark.yaml`，加入 `ue-autotest` 和组合 conditions。
 - 定义 verifier result schema 与共享校验 helper。
 - 定义 oracle 类型和 task authoring 约定，实现 `validate-task` 命令。
+- 为现有 task 显式补齐 `benchmark_role` 与 `[oracle]` 字段；至少为 `tps-build-engine-resolve` 提供 `oracle.patch`，使其可作为 Phase A oracle 验收对象。
 - 审查 `tps-build-incremental` 是否构造了 skill 敏感场景，决定保留或降级为 smoke。
+- 新增最小 runner 自测：config、task discovery、task role/oracle parsing、verifier schema、run-matrix filter。
 - 修正 README 与过时 MVP 文档标记。
 
-验收：现有 build tasks 仍可 discovery，report 不回归；`validate-task` 能对现有任意一个 build 任务完成三段验收。
+验收：现有 build tasks 仍可 discovery，report 不回归；最小 runner 自测通过；`validate-task --task-id tps-build-engine-resolve --repeat 3` 能完成三段验收。
 
 ### Phase B：Automation report 管线
 
@@ -563,10 +603,10 @@ tests/benchmark_runner/
 
 ### Phase E：Runner 自测
 
-- 新增不依赖 UE 的 runner 单元测试。
+- 扩展不依赖 UE 的 runner 单元测试。
 - 在本地 CI 或手动命令中固定执行。
 
-验收：配置解析、task discovery、report aggregation、schema 校验都有测试覆盖。
+验收：配置解析、task discovery、role/oracle parsing、condition filtering、report aggregation、failure detail、schema 校验都有测试覆盖，并在 runbook 中有固定执行入口。
 
 ## 10. Decision Records
 

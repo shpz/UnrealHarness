@@ -1,5 +1,7 @@
 # UE5 SkillsBench MVP 计划
 
+> Archived/obsolete: this June 2026 MVP plan is retained only as historical background. Current implementation work follows `docs/ue5-skillsbench-framework-completion-design.md` and the spec in `docs/superpowers/specs/2026-07-04-ue5-skillsbench-framework-completion-design.md`.
+
 日期：2026-06-12
 
 本计划基于 [`../ue5_skillsbench_design.md`](../ue5_skillsbench_design.md)，目标是在本地 Windows + PowerShell + UE5 环境中先跑通一个私有 SkillsBench-compatible MVP，用 `sample/TPSample` 对 `ue-build`、`ue-lsp`、`ue-autotest` 三个 skill 做可复现基准测试。

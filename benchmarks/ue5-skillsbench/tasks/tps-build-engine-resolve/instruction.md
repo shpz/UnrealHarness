@@ -1,7 +1,7 @@
-# Build Engine Resolve (GUID Registry)
+# Build Engine Resolve
 
-The UE5 project's `.uproject` has been reconfigured to use a source-built engine association (GUID format). The GUID is correctly registered in the Windows registry under `HKCU\SOFTWARE\Epic Games\Unreal Engine\Builds\`.
+The UE5 project's `.uproject` has an invalid `EngineAssociation` value, so the engine cannot be resolved from the registry.
 
-Build the `TPSampleEditor` target for `Win64` `Development`.
+Repair the engine association so the local Unreal Engine install can be resolved, then build the `TPSampleEditor` target for `Win64` `Development`.
 
-The engine path must be resolved from the registry via the GUID-based `EngineAssociation`.
+Use the Development configuration.

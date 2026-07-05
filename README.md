@@ -76,12 +76,14 @@ debug 编译
 ### 运行 Benchmark
 
 ```bash
-# 使用 Python 运行
-python -m benchmarks.ue5-skillsbench.runner
-
-# 或进入目录后运行
-python -m runner
+python -m benchmarks.ue5-skillsbench.runner preflight
+python -m benchmarks.ue5-skillsbench.runner validate-task --task-id tps-build-engine-resolve --repeat 3
+python -m benchmarks.ue5-skillsbench.runner run-single --task-id tps-build-engine-resolve --condition ue-build-only --adapter codex
+python -m benchmarks.ue5-skillsbench.runner run-matrix --adapter codex --run-id <run-id>
+python -m benchmarks.ue5-skillsbench.runner report --run-id <run-id>
 ```
+
+`run-matrix` 支持 `--task-id`、`--task-filter`、`--condition` 和 `--trials`，用于控制任务、条件和试次数。
 
 ### 任务类型
 
@@ -89,7 +91,7 @@ python -m runner
 - **编译修复** — 在故意引入编译错误的项目中修复问题
 - **多模块编译** — 验证跨模块编译能力
 
-更多详情参见 `benchmarks/ue5-skillsbench/` 目录。
+更多详情参见 `docs/ue5-skillsbench-framework-completion-design.md`。历史 MVP 计划已归档到 `docs/archived/ue5-skillsbench-mvp/`，不再作为当前实现依据。
 
 ## 环境要求
 
@@ -99,3 +101,8 @@ python -m runner
 ## 许可证
 
 MIT
+
+### Operational Docs
+
+- `docs/ue5-skillsbench-runbook.md`
+- `docs/ue5-skillsbench-task-authoring-guide.md`

@@ -46,23 +46,57 @@ class OracleAdapter(Adapter):
         timeout_minutes: int,
         task_dir: Optional[Path] = None,
     ) -> AdapterResult:
-        patch_file = (task_dir or instruction_path.parent) / "oracle.patch"
-        if not patch_file.exists():
+        oracle_dir = task_dir or instruction_path.parent
+        patch_file = oracle_dir / "oracle.patch"
+        action_py = oracle_dir / "oracle.py"
+        action_ps1 = oracle_dir / "oracle.ps1"
+        project_path = workspace_root / "TPSample"
+        adapter_sw = time.perf_counter()
+
+        if patch_file.exists():
+            result = subprocess.run(
+                ["git", "apply", str(patch_file)],
+                cwd=str(project_path),
+                capture_output=True,
+                text=True,
+            )
+        elif action_py.exists():
+            result = subprocess.run(
+                [os.sys.executable, str(action_py)],
+                cwd=str(project_path),
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "WORKSPACE_ROOT": str(workspace_root),
+                    "PROJECT_PATH": str(project_path),
+                    "ARTIFACTS_PATH": str(artifacts_dir),
+                },
+                timeout=timeout_minutes * 60,
+            )
+        elif action_ps1.exists():
+            result = subprocess.run(
+                ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(action_ps1)],
+                cwd=str(project_path),
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "WORKSPACE_ROOT": str(workspace_root),
+                    "PROJECT_PATH": str(project_path),
+                    "ARTIFACTS_PATH": str(artifacts_dir),
+                },
+                timeout=timeout_minutes * 60,
+            )
+        else:
             return AdapterResult(
-                exit_code=0,
+                exit_code=1,
                 timed_out=False,
                 duration_seconds=0.0,
                 adapter_wall_seconds=0.0,
+                failure_class="agent-crash",
             )
 
-        project_path = workspace_root / "TPSample"
-        adapter_sw = time.perf_counter()
-        result = subprocess.run(
-            ["git", "apply", str(patch_file)],
-            cwd=str(project_path),
-            capture_output=True,
-            text=True,
-        )
         elapsed = time.perf_counter() - adapter_sw
         return AdapterResult(
             exit_code=result.returncode,

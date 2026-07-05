@@ -1,4 +1,4 @@
-id = "tps-build-engine-resolve"
+id = "tps-build-fix-enhanced-input-dependency"
 project = "TPSample"
 timeout_minutes = 45
 benchmark_role = "formal"
@@ -7,8 +7,12 @@ primary_skills = ["ue-build"]
 [metadata]
 difficulty = "medium"
 category = "software-engineering"
-subcategory = "engine-resolution"
-tags = ["unreal-engine", "ue5", "ubt", "registry", "guid", "engine-association"]
+subcategory = "module-dependency-repair"
+task_type = ["debugging", "build-repair"]
+modality = ["source-code"]
+interface = ["terminal", "compiler-toolchain"]
+skill_type = ["tool-workflow", "debugging-heuristic"]
+tags = ["unreal-engine", "ue5", "ubt", "build-cs", "module-dependency", "enhanced-input"]
 
 [oracle]
 type = "action"

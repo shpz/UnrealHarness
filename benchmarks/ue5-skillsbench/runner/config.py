@@ -60,13 +60,36 @@ class TaskMetadata:
 
 
 @dataclasses.dataclass
+class OracleConfig:
+    type: str = "none"
+    path: str | None = None
+    repeat: int = 3
+
+
+@dataclasses.dataclass
+class VerifierConfig:
+    type: str = "python"
+    path: str = "verifier.py"
+    timeout_minutes: int = 45
+
+
+@dataclasses.dataclass
+class ArtifactConfig:
+    required: list[str] = dataclasses.field(default_factory=list)
+
+
+@dataclasses.dataclass
 class TaskConfig:
     id: str
     project: str
     timeout_minutes: int = 45
+    benchmark_role: str = "formal"
     primary_skills: list[str] = dataclasses.field(default_factory=list)
     secondary_skills: list[str] = dataclasses.field(default_factory=list)
     metadata: TaskMetadata = dataclasses.field(default_factory=TaskMetadata)
+    oracle: OracleConfig = dataclasses.field(default_factory=OracleConfig)
+    verifier: VerifierConfig = dataclasses.field(default_factory=VerifierConfig)
+    artifacts: ArtifactConfig = dataclasses.field(default_factory=ArtifactConfig)
 
 
 def load_benchmark_yaml(path: Path) -> BenchmarkConfig:
@@ -107,10 +130,14 @@ def load_task_toml(path: Path) -> TaskConfig:
     import tomllib
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
     meta = raw.get("metadata", {})
+    oracle = raw.get("oracle", {})
+    verifier = raw.get("verifier", {})
+    artifacts = raw.get("artifacts", {})
     return TaskConfig(
         id=raw["id"],
         project=raw.get("project", ""),
         timeout_minutes=raw.get("timeout_minutes", 45),
+        benchmark_role=raw.get("benchmark_role", "formal"),
         primary_skills=raw.get("primary_skills", []),
         secondary_skills=raw.get("secondary_skills", []),
         metadata=TaskMetadata(
@@ -124,6 +151,17 @@ def load_task_toml(path: Path) -> TaskConfig:
             skill_type=meta.get("skill_type", []),
             tags=meta.get("tags", []),
         ),
+        oracle=OracleConfig(
+            type=oracle.get("type", "none"),
+            path=oracle.get("path"),
+            repeat=oracle.get("repeat", 3),
+        ),
+        verifier=VerifierConfig(
+            type=verifier.get("type", "python"),
+            path=verifier.get("path", "verifier.py"),
+            timeout_minutes=verifier.get("timeout_minutes", 45),
+        ),
+        artifacts=ArtifactConfig(required=artifacts.get("required", [])),
     )
 
 

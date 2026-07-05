@@ -18,6 +18,31 @@ def _remove_readonly(func, path, exc_info):
         func(path)
 
 
+def _extended_length_path(path: Path) -> str:
+    resolved = str(path.resolve())
+    if os.name != "nt" or resolved.startswith("\\\\?\\"):
+        return resolved
+    if resolved.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + resolved.lstrip("\\")
+    return "\\\\?\\" + resolved
+
+
+def safe_rmtree(path: Path, attempts: int = 3) -> None:
+    """Remove a tree robustly on Windows workspaces with deep UE paths."""
+    last_error: OSError | None = None
+    for attempt in range(attempts):
+        try:
+            shutil.rmtree(_extended_length_path(path), onexc=_remove_readonly)
+            return
+        except OSError as exc:
+            last_error = exc
+            if attempt == attempts - 1:
+                break
+            time.sleep(0.5)
+    if last_error is not None:
+        raise last_error
+
+
 class EnginePaths:
     def __init__(self, engine_root: Path):
         self.engine_root = engine_root.resolve()
@@ -103,7 +128,7 @@ def invoke_build(
         for d in ["Intermediate", "Binaries"]:
             p = project_path / d
             if p.exists():
-                shutil.rmtree(p, onexc=_remove_readonly)
+                safe_rmtree(p)
 
     parent_log = build_log_path.parent if build_log_path else project_path / "Saved" / "Logs"
     parent_log.mkdir(parents=True, exist_ok=True)

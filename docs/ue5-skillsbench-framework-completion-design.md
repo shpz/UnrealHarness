@@ -7,7 +7,7 @@
 相关文档：
 
 - [`ue-autotest-benchmark-tasks-design.md`](./ue-autotest-benchmark-tasks-design.md)：`ue-autotest` 三套任务设计。
-- [`ue5-skillsbench-mvp/README.md`](./ue5-skillsbench-mvp/README.md)：历史 MVP 计划，已过时，仅作为早期背景参考。
+- [`archived/ue5-skillsbench-mvp/README.md`](./archived/ue5-skillsbench-mvp/README.md)：历史 MVP 计划，已过时，仅作为早期背景参考。
 
 ## 目标与非目标
 

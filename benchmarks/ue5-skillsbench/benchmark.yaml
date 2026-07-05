@@ -9,6 +9,8 @@ project:
 skills:
   ue-build:
     path: skills/ue-build
+  ue-autotest:
+    path: skills/ue-autotest
 
 conditions:
   - id: no-skills
@@ -16,9 +18,16 @@ conditions:
   - id: ue-build-only
     skills:
       - ue-build
+  - id: ue-autotest-only
+    skills:
+      - ue-autotest
+  - id: ue-autotest-with-build
+    skills:
+      - ue-build
+      - ue-autotest
 
 runner:
-  runRoot: D:\br
+  runRoot: .bench/runs
   trials: 5
   copyExcludes:
     - Binaries
