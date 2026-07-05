@@ -144,7 +144,7 @@ def prepare_workspace(
     junction_dir = junction_root / f"r{short_id}"
     try:
         create_junction(junction_dir, project_destination)
-        project_junction = junction_dir / "TPSample"
+        project_junction = junction_dir
     except Exception as exc:
         print(f"Warning: failed to create junction {junction_dir}: {exc}", file=sys.stderr)
         project_junction = project_destination
