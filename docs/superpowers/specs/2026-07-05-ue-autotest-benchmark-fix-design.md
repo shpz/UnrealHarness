@@ -71,7 +71,7 @@
   - `production_helper_touched` 检查从只接受固定字符串 `Event.Code == Code` 或 `FindByPredicate`，放宽为接受任意 `<变量>.Code == Code` 模式，以便认可 agent 使用不同变量名（如 `Existing.Code == Code`）实现的等价去重逻辑。
 - `tps-autotest-add-input-math-tests/verifier.py`：
   - 文件名检查改为 `*InputMath*Test.cpp`。
-  - flag 检查改为必须包含 `EngineFilter`，禁止 `ProductFilter`，并允许 `ApplicationContextMask | EngineFilter` 或 `EditorContext | EngineFilter`。
+  - flag 检查改为必须包含 `EngineFilter`，禁止 `ProductFilter`，并允许 `ApplicationContextMask | EngineFilter` 或 `EditorContext | EngineFilter`；同时接受 `EAutomationTestFlags_XXX` 宏形式与 `EAutomationTestFlags::XXX` 枚举形式。
 - `tps-autotest-run-scoped-report/verifier.py`：
   - Markdown 内容检查改为：包含 `scope/filter/tests run/automation` 之一、包含 `passed/pass`、包含 `failed/failure/no failures/all tests passed` 之一。
 

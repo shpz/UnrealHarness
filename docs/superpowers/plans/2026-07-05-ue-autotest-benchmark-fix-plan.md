@@ -678,7 +678,7 @@ git commit -m "feat(verifier): accept alternative variable names in production h
 - Test: `tests/benchmark_runner/test_add_input_math_task_verifier.py:40-62`, `tests/benchmark_runner/test_add_input_math_task_verifier.py:111-150`
 
 **Interfaces:**
-- Produces: `_source_checks` now accepts `*InputMath*Test.cpp` and `ApplicationContextMask | EngineFilter`
+- Produces: `_source_checks` now accepts `*InputMath*Test.cpp` and `ApplicationContextMask | EngineFilter` (both enum `::` and macro `_` flag forms)
 
 - [ ] **Step 1: Modify _source_checks**
 
@@ -718,12 +718,14 @@ def _source_checks(project_path: Path) -> list[dict]:
     test_files = list((project_path / "Source" / "TPSampleTest" / "Private").glob("*.cpp"))
     combined = "\n".join(_read_text(path) for path in test_files)
     names = re.findall(r'"(TPSample\.Input\.Math\.[^"]+)"', combined)
+    # UE exposes flags both as enum values (::) and bitmask macros (_). Normalize before checking.
+    normalized = combined.replace("EAutomationTestFlags_", "EAutomationTestFlags::")
     uses_supported_flags = (
-        "EAutomationTestFlags::EngineFilter" in combined
-        and "EAutomationTestFlags::ProductFilter" not in combined
+        "EAutomationTestFlags::EngineFilter" in normalized
+        and "EAutomationTestFlags::ProductFilter" not in normalized
         and (
-            "EAutomationTestFlags::ApplicationContextMask" in combined
-            or "EAutomationTestFlags::EditorContext" in combined
+            "EAutomationTestFlags::ApplicationContextMask" in normalized
+            or "EAutomationTestFlags::EditorContext" in normalized
         )
     )
     return [
@@ -750,6 +752,10 @@ In `_first_failure_class`, replace `"math_tests_use_editor_engine_flags"` with `
 - [ ] **Step 3: Update unit test to cover ApplicationContextMask**
 
 In `tests/benchmark_runner/test_add_input_math_task_verifier.py`, add a new test or modify `_write_test_module` to also write a file named `InputMathTest.cpp` with `ApplicationContextMask` flags and verify it passes.
+
+- [ ] **Step 4: Add unit test for macro-form flags**
+
+Add a test that writes `InputMathTest.cpp` using `EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::EngineFilter` and verify it passes.
 
 Add:
 
