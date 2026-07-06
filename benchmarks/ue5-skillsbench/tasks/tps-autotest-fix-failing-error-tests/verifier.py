@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 
@@ -85,6 +86,42 @@ def _registration_checks(project_path: Path) -> list[dict]:
     ]
 
 
+_DEDUPE_PATTERNS = [
+    re.compile(r"\b\w+\.Code\s*==\s*Code\b"),
+    re.compile(r"FindByPredicate|ContainsByPredicate"),
+    re.compile(r"\bTSet\s*<"),
+    re.compile(r"\bTMap\s*<"),
+    re.compile(r"\bTArray\s*<[^>]*>\s*::\s*Contains\b"),
+    re.compile(r"\bRemoveAll\b|\bRemoveAllSwap\b"),
+]
+
+
+def _helper_has_meaningful_diff(project_path: Path) -> bool:
+    helper_source = project_path / "Source" / "TPSample" / "Private" / "TPSampleErrorAccumulator.cpp"
+    if not helper_source.exists():
+        return False
+    result = subprocess.run(
+        ["git", "diff", "HEAD", "--", str(helper_source)],
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+    )
+    diff = result.stdout.strip()
+    if not diff:
+        return False
+    # Reject diffs that are only whitespace or comment changes
+    for line in diff.splitlines():
+        if line.startswith(("+", "-")) and not line.startswith(("+++", "---")):
+            stripped = line[1:].strip()
+            if stripped and not stripped.startswith("//") and not stripped.startswith("/*") and not stripped.endswith("*/"):
+                return True
+    return False
+
+
+def _helper_implements_code_dedup(helper_text: str) -> bool:
+    return any(pattern.search(helper_text) for pattern in _DEDUPE_PATTERNS)
+
+
 def _anti_cheat_checks(project_path: Path) -> list[dict]:
     test_path = project_path / "Source" / "TPSampleTest" / "Private" / "TPSampleErrorAccumulatorTest.cpp"
     helper_source = project_path / "Source" / "TPSample" / "Private" / "TPSampleErrorAccumulator.cpp"
@@ -101,7 +138,7 @@ def _anti_cheat_checks(project_path: Path) -> list[dict]:
         {"name": "error_test_source_exists", "passed": test_path.exists(), "details": str(test_path)},
         {"name": "error_test_source_keeps_required_tests", "passed": REQUIRED_TESTS.issubset(declared_tests), "details": ", ".join(sorted(declared_tests))},
         {"name": "broadcast_assertion_not_weakened", "passed": strong_broadcast_assertion and ">= 0" not in text},
-        {"name": "production_helper_touched", "passed": bool(re.search(r"\b\w+\.Code\s*==\s*Code\b", helper_text)) or "FindByPredicate" in helper_text},
+        {"name": "production_helper_touched", "passed": _helper_has_meaningful_diff(project_path) and _helper_implements_code_dedup(helper_text)},
         {"name": "test_source_no_early_success_shortcut", "passed": not any(pattern in text for pattern in weakened_patterns[:1])},
     ]
 

@@ -83,6 +83,92 @@ class FixFailingErrorTaskVerifierTests(unittest.TestCase):
             verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
             self.assertTrue(verifier_result["passed"])
 
+    def test_verifier_accepts_tset_dedup_in_flush(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "TPSample"
+            _write_project_shell(
+                project,
+                helper_code='''
+void FTPSampleErrorAccumulator::ReportError(const FString& Code, const FString& Message)
+{
+    PendingErrors.Add({Code, Message});
+}
+
+int32 FTPSampleErrorAccumulator::Flush(TFunctionRef<void(const FString& Code, const FString& Message)> OnError)
+{
+    int32 BroadcastCount = 0;
+    TSet<FString> BroadcastCodes;
+    for (const FTPSampleErrorEvent& Event : PendingErrors)
+    {
+        if (!BroadcastCodes.Contains(Event.Code))
+        {
+            OnError(Event.Code, Event.Message);
+            BroadcastCodes.Add(Event.Code);
+            ++BroadcastCount;
+        }
+    }
+    PendingErrors.Reset();
+    return BroadcastCount;
+}
+''',
+            )
+            _write_test_module(project, strong_assertion=True)
+            _write_report(
+                project,
+                [
+                    "TPSample.Error.Accumulator.RecordsErrors",
+                    "TPSample.Error.Accumulator.FlushClearsQueue",
+                    "TPSample.Error.Accumulator.DedupesBroadcast",
+                ],
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            result = _run_verifier(project, artifacts)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
+            self.assertTrue(verifier_result["passed"])
+
+    def test_verifier_rejects_whitespace_only_helper_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "TPSample"
+            _write_project_shell(project)
+            # Commit the fixed helper as HEAD so the only uncommitted change is a comment.
+            subprocess.run(["git", "add", "Source/TPSample/Private/TPSampleErrorAccumulator.cpp"], cwd=project, capture_output=True, text=True)
+            subprocess.run(["git", "commit", "-m", "fix helper"], cwd=project, capture_output=True, text=True)
+            # Modify helper with only whitespace/comment changes
+            helper_path = project / "Source" / "TPSample" / "Private" / "TPSampleErrorAccumulator.cpp"
+            original = helper_path.read_text(encoding="utf-8")
+            helper_path.write_text(original + "\n// no-op comment\n", encoding="utf-8")
+            _write_test_module(project, strong_assertion=True)
+            _write_report(
+                project,
+                [
+                    "TPSample.Error.Accumulator.RecordsErrors",
+                    "TPSample.Error.Accumulator.FlushClearsQueue",
+                    "TPSample.Error.Accumulator.DedupesBroadcast",
+                ],
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            result = _run_verifier(project, artifacts)
+
+            self.assertNotEqual(result.returncode, 0)
+            verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
+            self.assertEqual(verifier_result["failure_class"], "cheating")
+
+
+_BUGGY_HELPER_BASELINE = """\
+void FTPSampleErrorAccumulator::ReportError(const FString& Code, const FString& Message)
+{
+    PendingErrors.Add({Code, Message});
+}
+"""
+
 
 def _write_project_shell(project: Path, helper_code: str | None = None) -> None:
     source = project / "Source"
@@ -107,10 +193,15 @@ def _write_project_shell(project: Path, helper_code: str | None = None) -> None:
     )
     if helper_code is None:
         helper_code = "void ReportError() { if (Event.Code == Code) { return; } }\n"
-    (source / "TPSample" / "Private" / "TPSampleErrorAccumulator.cpp").write_text(
-        helper_code,
-        encoding="utf-8",
-    )
+    helper_path = source / "TPSample" / "Private" / "TPSampleErrorAccumulator.cpp"
+    # Seed a git baseline so the verifier can detect meaningful production diffs.
+    subprocess.run(["git", "init"], cwd=project, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=project, capture_output=True, text=True)
+    helper_path.write_text(_BUGGY_HELPER_BASELINE, encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=project, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "baseline"], cwd=project, capture_output=True, text=True)
+    helper_path.write_text(helper_code, encoding="utf-8")
 
 
 def _write_test_module(project: Path, strong_assertion: bool) -> None:
