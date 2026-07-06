@@ -721,6 +721,29 @@ def attribute_tests_to_modules(
             buckets[best_module].append(test)
     return buckets
 
+def _build_module_results(
+    buckets: dict[str, list[dict[str, Any]]],
+    mod: str,
+    module_prefixes: dict[str, str],
+    filters: list[str],
+    run_result: dict[str, Any],
+) -> dict[str, Any]:
+    results = {
+        "tests": list(buckets.get(mod, [])),
+        "summary": {"total": 0, "passed": 0, "failed": 0, "duration_ms": 0},
+    }
+    _recompute_summary(results)
+
+    return {
+        "name": mod,
+        "filter": module_prefixes.get(mod, "+".join(filters)),
+        "exitCode": run_result["exitCode"],
+        "timedOut": run_result["timedOut"],
+        "logFile": str(run_result["logFile"]),
+        "rawReportDir": str(run_result["reportDir"]),
+        "results": results,
+    }
+
 
 def invoke_test_run(
     project_file: Path,
@@ -760,47 +783,19 @@ def invoke_test_run(
         ["(unattributed)"] if "(unattributed)" in buckets else []
     )
     for mod in bucket_names:
-        results = {
-            "tests": list(buckets.get(mod, [])),
-            "summary": {"total": 0, "passed": 0, "failed": 0, "duration_ms": 0},
-        }
-        _recompute_summary(results)
-
-        if results["summary"]["total"] == 0:
-            results["tests"].append({
-                "name": f"{mod} (NO TESTS PARSED)",
-                "passed": False,
-                "duration": "",
-                "error": (
-                    "No automation test results were parsed. "
-                    "Check scope, module registration, log file, and raw report directory."
-                ),
-            })
-            _recompute_summary(results)
-
-        if run_result["timedOut"]:
-            results["tests"].append({
-                "name": f"{mod} (TIMEOUT)",
-                "passed": False,
-                "duration": "",
-                "error": f"Editor process timed out after {config['editorTimeoutSeconds']} seconds",
-            })
-            _recompute_summary(results)
-
-        module_result = {
-            "name": mod,
-            "filter": module_prefixes.get(mod, "+".join(filters)),
-            "exitCode": run_result["exitCode"],
-            "timedOut": run_result["timedOut"],
-            "logFile": str(run_result["logFile"]),
-            "rawReportDir": str(run_result["reportDir"]),
-            "results": results,
-        }
+        module_result = _build_module_results(
+            buckets, mod, module_prefixes, filters, run_result
+        )
         all_results["modules"].append(module_result)
 
-        all_results["overall"]["total"] += results["summary"]["total"]
-        all_results["overall"]["passed"] += results["summary"]["passed"]
-        all_results["overall"]["failed"] += results["summary"]["failed"]
+        module_tests = module_result["results"]["tests"]
+        all_results["overall"]["total"] += len(module_tests)
+        all_results["overall"]["passed"] += sum(
+            1 for t in module_tests if t.get("passed")
+        )
+        all_results["overall"]["failed"] += sum(
+            1 for t in module_tests if not t.get("passed")
+        )
 
     return all_results
 
