@@ -7,8 +7,9 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
-from .adapter import CodexAdapter, KimiCodeAdapter, ManualAdapter, NoopAdapter, OracleAdapter
+from .adapter import AdapterResult, CodexAdapter, KimiCodeAdapter, ManualAdapter, NoopAdapter, OracleAdapter
 from .automation_artifacts import collect_automation_artifacts
 from .config import BenchmarkConfig, ConditionConfig, TaskConfig, discover_tasks, load_benchmark_yaml, load_task_toml
 from .metrics import capture_filtered_git_diff, capture_git_diff, diff_metrics, git_add_untracked
@@ -30,6 +31,29 @@ def _benchmark_root() -> Path:
 
 def _run_id_now() -> str:
     return time.strftime("%Y%m%d-%H%M%S")
+
+
+def _aggregate_trial_result(
+    adapter_result: AdapterResult,
+    verifier_result: dict,
+) -> tuple[bool, Optional[str]]:
+    """Combine adapter and verifier outcomes into an overall trial verdict."""
+    overall_passed = (
+        adapter_result.exit_code == 0
+        and not adapter_result.timed_out
+        and adapter_result.failure_class is None
+        and (verifier_result["verifier_result"] or {}).get("passed", False)
+    )
+
+    failure_class = None
+    if adapter_result.failure_class:
+        failure_class = adapter_result.failure_class
+    elif adapter_result.exit_code != 0 or adapter_result.timed_out:
+        failure_class = "agent-crash"
+    elif not (verifier_result["verifier_result"] or {}).get("passed", False):
+        failure_class = (verifier_result["verifier_result"] or {}).get("failure_class", "verifier-fail")
+
+    return overall_passed, failure_class
 
 
 def select_matrix_tasks(
@@ -294,17 +318,7 @@ def cmd_run_single(args: argparse.Namespace) -> int:
         except Exception as exc:
             print(f"Warning: failed to remove junction {junction_dir}: {exc}", file=sys.stderr)
 
-    overall_passed = (
-        adapter_result.exit_code == 0
-        and not adapter_result.timed_out
-        and (verifier_result["verifier_result"] or {}).get("passed", False)
-    )
-
-    failure_class = None
-    if adapter_result.exit_code != 0 or adapter_result.timed_out:
-        failure_class = adapter_result.failure_class or "agent-crash"
-    elif not (verifier_result["verifier_result"] or {}).get("passed", False):
-        failure_class = (verifier_result["verifier_result"] or {}).get("failure_class", "verifier-fail")
+    overall_passed, failure_class = _aggregate_trial_result(adapter_result, verifier_result)
 
     result = {
         "run_id": run_id,
