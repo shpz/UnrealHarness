@@ -161,6 +161,39 @@ int32 FTPSampleErrorAccumulator::Flush(TFunctionRef<void(const FString& Code, co
             verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
             self.assertEqual(verifier_result["failure_class"], "cheating")
 
+    def test_verifier_rejects_block_comment_dedup_token_bypass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "TPSample"
+            _write_project_shell(project)
+            # Commit the baseline helper so the only uncommitted change is a comment.
+            subprocess.run(["git", "add", "Source/TPSample/Private/TPSampleErrorAccumulator.cpp"], cwd=project, check=True, capture_output=True, text=True)
+            subprocess.run(["git", "commit", "-m", "fix helper"], cwd=project, check=True, capture_output=True, text=True)
+            # Modify helper with only a multi-line block comment that contains a dedup token.
+            helper_path = project / "Source" / "TPSample" / "Private" / "TPSampleErrorAccumulator.cpp"
+            original = helper_path.read_text(encoding="utf-8")
+            helper_path.write_text(
+                original + "\n/*\n * Consider using TSet<FString> here to dedupe.\n */\n",
+                encoding="utf-8",
+            )
+            _write_test_module(project, strong_assertion=True)
+            _write_report(
+                project,
+                [
+                    "TPSample.Error.Accumulator.RecordsErrors",
+                    "TPSample.Error.Accumulator.FlushClearsQueue",
+                    "TPSample.Error.Accumulator.DedupesBroadcast",
+                ],
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            result = _run_verifier(project, artifacts)
+
+            self.assertNotEqual(result.returncode, 0)
+            verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
+            self.assertEqual(verifier_result["failure_class"], "cheating")
+
 
 _BUGGY_HELPER_BASELINE = """\
 void FTPSampleErrorAccumulator::ReportError(const FString& Code, const FString& Message)

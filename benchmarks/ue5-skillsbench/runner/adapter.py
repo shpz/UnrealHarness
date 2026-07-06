@@ -271,11 +271,16 @@ def _project_uses_external_worktree(project_path: Path) -> bool:
     if result.returncode != 0:
         return False
     git_dir = Path(result.stdout.strip())
-    try:
-        git_dir.relative_to(project_path.resolve())
-        return False
-    except ValueError:
-        return True
+    # A junction may cause git to report the junction path while project_path is
+    # the resolved target (or vice versa). Treat the worktree as internal if the
+    # git directory is inside either path.
+    for base in (project_path, project_path.resolve()):
+        try:
+            git_dir.relative_to(base)
+            return False
+        except ValueError:
+            pass
+    return True
 
 
 def _parse_process_csv(output: str, project_strs: list[str]) -> list[int]:

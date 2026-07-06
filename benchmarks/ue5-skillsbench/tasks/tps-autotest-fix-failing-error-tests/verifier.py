@@ -120,18 +120,20 @@ def _helper_has_meaningful_diff(project_path: Path) -> bool:
     diff = result.stdout.strip()
     if not diff:
         return False
+    # Strip comments from the entire diff first so multi-line block comments
+    # spanning several diff lines are fully removed.
+    stripped_diff = _strip_cpp_comments(diff)
     # Reject diffs that are only whitespace or comment changes
-    for line in diff.splitlines():
+    for line in stripped_diff.splitlines():
         if line.startswith(("+", "-")) and not line.startswith(("+++", "---")):
-            content = line[1:]
-            stripped = _strip_cpp_comments(content).strip()
-            if stripped:
+            if line[1:].strip():
                 return True
     return False
 
 
 def _helper_implements_code_dedup(helper_text: str) -> bool:
-    return any(pattern.search(helper_text) for pattern in _DEDUPE_PATTERNS)
+    stripped = _strip_cpp_comments(helper_text)
+    return any(pattern.search(stripped) for pattern in _DEDUPE_PATTERNS)
 
 
 def _anti_cheat_checks(project_path: Path) -> list[dict]:
