@@ -278,7 +278,7 @@ def _project_uses_external_worktree(project_path: Path) -> bool:
         return True
 
 
-def _parse_process_csv(output: str, project_str: str) -> list[int]:
+def _parse_process_csv(output: str, project_strs: list[str]) -> list[int]:
     """Parse WMIC/PowerShell CSV output and return PIDs of lingering UE processes."""
     reader = csv.DictReader(output.strip().splitlines())
     pids = []
@@ -294,14 +294,14 @@ def _parse_process_csv(output: str, project_str: str) -> list[int]:
             pid = int(pid_str)
         except ValueError:
             continue
-        if name == "python.exe" and ("autotest.py" in command_line or project_str in command_line):
+        if name == "python.exe" and "autotest.py" in command_line and any(p in command_line for p in project_strs):
             pids.append(pid)
-        elif name == "unrealeditor-cmd.exe" and project_str in command_line:
+        elif name == "unrealeditor-cmd.exe" and any(p in command_line for p in project_strs):
             pids.append(pid)
     return pids
 
 
-def _find_lingering_processes(project_str: str) -> list[int]:
+def _find_lingering_processes(project_strs: list[str]) -> list[int]:
     """Enumerate lingering UE processes using WMIC or PowerShell."""
     wmic_cmd = [
         "wmic", "process", "where",
@@ -315,7 +315,7 @@ def _find_lingering_processes(project_str: str) -> list[int]:
             text=True,
             check=True,
         ).stdout
-        return _parse_process_csv(output, project_str)
+        return _parse_process_csv(output, project_strs)
     except (subprocess.CalledProcessError, FileNotFoundError, OSError):
         pass
 
@@ -332,7 +332,7 @@ def _find_lingering_processes(project_str: str) -> list[int]:
             text=True,
             check=True,
         ).stdout
-        return _parse_process_csv(output, project_str)
+        return _parse_process_csv(output, project_strs)
     except (subprocess.CalledProcessError, FileNotFoundError, OSError):
         pass
 
@@ -340,10 +340,13 @@ def _find_lingering_processes(project_str: str) -> list[int]:
 
 
 def _wait_for_lingering_ue_processes(project_path: Path, max_wait_seconds: float = 600.0) -> bool:
-    project_str = str(project_path.resolve()).lower()
+    project_strs = [
+        str(project_path).lower(),
+        str(project_path.resolve()).lower(),
+    ]
     start = time.perf_counter()
     while True:
-        remaining = _find_lingering_processes(project_str)
+        remaining = _find_lingering_processes(project_strs)
         if not remaining:
             return True
         if time.perf_counter() - start > max_wait_seconds:
@@ -451,6 +454,7 @@ class KimiCodeAdapter(Adapter):
             cmd.extend(["--skills-dir", str(skills_root)])
 
         adapter_sw = time.perf_counter()
+        timed_out = False
         try:
             result = subprocess.run(
                 cmd,
@@ -458,41 +462,37 @@ class KimiCodeAdapter(Adapter):
                 timeout=timeout_minutes * 60,
                 cwd=str(project_path),
             )
-            elapsed = time.perf_counter() - adapter_sw
-            timed_out = False
-
+            exit_code = result.returncode
             stdout_text = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
             stderr_text = result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
-            stdout_path.write_text(stdout_text, encoding="utf-8")
-            stderr_path.write_text(stderr_text, encoding="utf-8")
-
         except subprocess.TimeoutExpired as e:
-            elapsed = time.perf_counter() - adapter_sw
+            timed_out = True
+            exit_code = 124
             stdout_text = e.stdout.decode("utf-8", errors="replace") if e.stdout else ""
             stderr_text = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
-            stdout_path.write_text(stdout_text, encoding="utf-8")
-            stderr_path.write_text(stderr_text, encoding="utf-8")
-            return AdapterResult(
-                exit_code=124,
-                timed_out=True,
-                duration_seconds=round(elapsed, 3),
-                adapter_wall_seconds=round(elapsed, 3),
-                failure_class="timeout",
-            )
+
+        stdout_path.write_text(stdout_text, encoding="utf-8")
+        stderr_path.write_text(stderr_text, encoding="utf-8")
 
         failure_class = None
-        if result.returncode != 0:
+        if timed_out:
+            failure_class = "timeout"
+        elif exit_code != 0:
             failure_class = "agent-crash"
 
-        if result.returncode == 0 and not timed_out:
+        # Run post-run cleanup checks regardless of whether the Kimi subprocess
+        # returned normally or timed out. Cleanup findings only override the
+        # success case; timeout failure_class takes precedence.
+        if failure_class is None:
             if _project_uses_external_worktree(project_path):
                 failure_class = "agent-crash"
             elif not _wait_for_lingering_ue_processes(project_path):
                 failure_class = "agent-crash"
 
+        elapsed = time.perf_counter() - adapter_sw
         return AdapterResult(
-            exit_code=result.returncode,
-            timed_out=False,
+            exit_code=exit_code,
+            timed_out=timed_out,
             duration_seconds=round(elapsed, 3),
             adapter_wall_seconds=round(elapsed, 3),
             failure_class=failure_class,
