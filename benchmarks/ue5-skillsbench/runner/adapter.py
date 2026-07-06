@@ -260,6 +260,60 @@ class CodexAdapter(Adapter):
         )
 
 
+def _project_uses_external_worktree(project_path: Path) -> bool:
+    result = subprocess.run(
+        ["git", "rev-parse", "--absolute-git-dir"],
+        cwd=str(project_path),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False
+    git_dir = Path(result.stdout.strip())
+    try:
+        git_dir.relative_to(project_path.resolve())
+        return False
+    except ValueError:
+        return True
+
+
+def _wait_for_lingering_ue_processes(project_path: Path, max_wait_seconds: float = 600.0) -> bool:
+    project_str = str(project_path.resolve()).lower()
+    start = time.perf_counter()
+    while True:
+        remaining = []
+        try:
+            output = subprocess.run(
+                ["tasklist", "/FO", "CSV", "/V"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return True
+
+        for line in output.splitlines()[1:]:
+            parts = [p.strip('"') for p in line.split("\",\"")]
+            if len(parts) < 9:
+                continue
+            image_name = parts[0].lower()
+            command_line = parts[8].lower()
+            if image_name == "python.exe" and (project_str in command_line or "autotest.py" in command_line):
+                remaining.append(parts[0])
+                continue
+            if image_name == "unrealeditor-cmd.exe" and project_str in command_line:
+                remaining.append(parts[0])
+
+        if not remaining:
+            return True
+        if time.perf_counter() - start > max_wait_seconds:
+            # Kill remaining processes
+            for name in remaining:
+                subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True)
+            return False
+        time.sleep(2.0)
+
+
 class KimiCodeAdapter(Adapter):
     """Launch the Kimi Code CLI (kimi) to solve the task.
 
@@ -390,6 +444,12 @@ class KimiCodeAdapter(Adapter):
         failure_class = None
         if result.returncode != 0:
             failure_class = "agent-crash"
+
+        if result.returncode == 0 and not timed_out:
+            if _project_uses_external_worktree(project_path):
+                failure_class = "agent-crash"
+            elif not _wait_for_lingering_ue_processes(project_path):
+                failure_class = "agent-crash"
 
         return AdapterResult(
             exit_code=result.returncode,
