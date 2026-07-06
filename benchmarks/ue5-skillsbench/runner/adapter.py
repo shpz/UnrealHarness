@@ -483,11 +483,14 @@ class KimiCodeAdapter(Adapter):
         # Run post-run cleanup checks regardless of whether the Kimi subprocess
         # returned normally or timed out. Cleanup findings only override the
         # success case; timeout failure_class takes precedence.
-        if failure_class is None:
-            if _project_uses_external_worktree(project_path):
-                failure_class = "agent-crash"
-            elif not _wait_for_lingering_ue_processes(project_path):
-                failure_class = "agent-crash"
+        cleanup_failed = False
+        if _project_uses_external_worktree(project_path):
+            cleanup_failed = True
+        elif not _wait_for_lingering_ue_processes(project_path):
+            cleanup_failed = True
+
+        if cleanup_failed and failure_class is None:
+            failure_class = "agent-crash"
 
         elapsed = time.perf_counter() - adapter_sw
         return AdapterResult(

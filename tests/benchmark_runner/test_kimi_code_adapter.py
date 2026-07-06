@@ -160,3 +160,46 @@ class WaitForLingeringUeProcessesTests(unittest.TestCase):
             ]
             self.assertEqual(len(taskkill_calls), 1)
             self.assertEqual(taskkill_calls[0].args[0][3], "12345")
+
+
+class KimiCodeAdapterTimeoutCleanupTests(unittest.TestCase):
+    def test_cleanup_runs_on_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace_root = Path(tmp)
+            workspace_root.mkdir(exist_ok=True)
+            project_path = workspace_root / "TPSample"
+            project_path.mkdir()
+            artifacts_dir = workspace_root / "artifacts"
+            artifacts_dir.mkdir()
+            instruction_path = workspace_root / "instruction.md"
+            instruction_path.write_text("Run tests.", encoding="utf-8")
+
+            adapter = KimiCodeAdapter()
+            adapter._find_kimi = lambda: Path("/fake/kimi.exe")  # type: ignore[method-assign]
+
+            def fake_run(cmd, *args, **kwargs):
+                if isinstance(cmd, list) and len(cmd) > 0 and cmd[0] == "git":
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+                raise subprocess.TimeoutExpired(cmd=cmd, timeout=1)
+
+            with patch.object(subprocess, "run", side_effect=fake_run):
+                with patch(
+                    "benchmarks.ue5_skillsbench.runner.adapter._project_uses_external_worktree"
+                ) as mock_worktree:
+                    with patch(
+                        "benchmarks.ue5_skillsbench.runner.adapter._wait_for_lingering_ue_processes"
+                    ) as mock_wait:
+                        mock_worktree.return_value = False
+                        mock_wait.return_value = True
+                        result = adapter.run(
+                            workspace_root=workspace_root,
+                            instruction_path=instruction_path,
+                            skills_root=None,
+                            artifacts_dir=artifacts_dir,
+                            timeout_minutes=1,
+                        )
+
+            self.assertTrue(result.timed_out)
+            self.assertEqual(result.failure_class, "timeout")
+            mock_worktree.assert_called_once_with(project_path)
+            mock_wait.assert_called_once_with(project_path)
