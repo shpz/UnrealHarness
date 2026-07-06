@@ -96,6 +96,14 @@ _DEDUPE_PATTERNS = [
 ]
 
 
+def _strip_cpp_comments(text: str) -> str:
+    """Remove C++ style comments from a line of source code."""
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    text = re.sub(r"/\*.*", "", text)
+    text = re.sub(r"//.*", "", text)
+    return text
+
+
 def _helper_has_meaningful_diff(project_path: Path) -> bool:
     helper_source = project_path / "Source" / "TPSample" / "Private" / "TPSampleErrorAccumulator.cpp"
     if not helper_source.exists():
@@ -115,8 +123,9 @@ def _helper_has_meaningful_diff(project_path: Path) -> bool:
     # Reject diffs that are only whitespace or comment changes
     for line in diff.splitlines():
         if line.startswith(("+", "-")) and not line.startswith(("+++", "---")):
-            stripped = line[1:].strip()
-            if stripped and not stripped.startswith("//") and not stripped.startswith("/*") and not stripped.endswith("*/"):
+            content = line[1:]
+            stripped = _strip_cpp_comments(content).strip()
+            if stripped:
                 return True
     return False
 
@@ -135,14 +144,14 @@ def _anti_cheat_checks(project_path: Path) -> list[dict]:
         re.search(r"BroadcastCount\s*,\s*1", text)
         or re.search(r"BroadcastCount\s*==\s*1", text)
     )
-    weakened_patterns = [">= 0", "return true; }", "return true;\n}"]
+    weakened_pattern = ">= 0"
 
     return [
         {"name": "error_test_source_exists", "passed": test_path.exists(), "details": str(test_path)},
         {"name": "error_test_source_keeps_required_tests", "passed": REQUIRED_TESTS.issubset(declared_tests), "details": ", ".join(sorted(declared_tests))},
-        {"name": "broadcast_assertion_not_weakened", "passed": strong_broadcast_assertion and ">= 0" not in text},
+        {"name": "broadcast_assertion_not_weakened", "passed": strong_broadcast_assertion and weakened_pattern not in text},
         {"name": "production_helper_touched", "passed": _helper_has_meaningful_diff(project_path) and _helper_implements_code_dedup(helper_text)},
-        {"name": "test_source_no_early_success_shortcut", "passed": not any(pattern in text for pattern in weakened_patterns[:1])},
+        {"name": "test_source_no_early_success_shortcut", "passed": weakened_pattern not in text},
     ]
 
 

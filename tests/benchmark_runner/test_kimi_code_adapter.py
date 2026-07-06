@@ -4,10 +4,11 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
-from benchmarks.ue5_skillsbench.runner.adapter import KimiCodeAdapter
+from benchmarks.ue5_skillsbench.runner.adapter import KimiCodeAdapter, _wait_for_lingering_ue_processes
 
 
 def _fake_run_for_kimi(real_run):
@@ -129,3 +130,33 @@ class KimiCodeAdapterPostRunTests(unittest.TestCase):
                 )
 
             self.assertNotEqual(result.failure_class, "agent-crash")
+
+
+class WaitForLingeringUeProcessesTests(unittest.TestCase):
+    def test_kills_matched_python_pid_on_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_path = Path(tmp)
+            project_path.mkdir(exist_ok=True)
+            fake_output = (
+                "Node,Name,CommandLine,ProcessId\r\n"
+                f"DESKTOP,python.exe,\"python.exe {project_path / 'autotest.py'} arg\",12345\r\n"
+            )
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd[:3] == ["wmic", "process", "where"]:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=fake_output, stderr="")
+                if cmd[:3] == ["taskkill", "/F", "/PID"]:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+            with patch.object(subprocess, "run", side_effect=fake_run) as mock_run:
+                with patch.object(time, "sleep"):
+                    result = _wait_for_lingering_ue_processes(project_path, max_wait_seconds=-1.0)
+
+            self.assertFalse(result)
+            taskkill_calls = [
+                call for call in mock_run.call_args_list
+                if len(call.args[0]) >= 4 and call.args[0][:3] == ["taskkill", "/F", "/PID"]
+            ]
+            self.assertEqual(len(taskkill_calls), 1)
+            self.assertEqual(taskkill_calls[0].args[0][3], "12345")

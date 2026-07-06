@@ -1,6 +1,7 @@
 """Adapter abstract base class and built-in adapters."""
 from __future__ import annotations
 
+import csv
 import os
 import shutil
 import subprocess
@@ -277,39 +278,77 @@ def _project_uses_external_worktree(project_path: Path) -> bool:
         return True
 
 
+def _parse_process_csv(output: str, project_str: str) -> list[int]:
+    """Parse WMIC/PowerShell CSV output and return PIDs of lingering UE processes."""
+    reader = csv.DictReader(output.strip().splitlines())
+    pids = []
+    for row in reader:
+        if not row:
+            continue
+        name = (row.get("Name") or "").lower()
+        command_line = (row.get("CommandLine") or "").lower()
+        pid_str = row.get("ProcessId") or ""
+        if not name or not pid_str:
+            continue
+        try:
+            pid = int(pid_str)
+        except ValueError:
+            continue
+        if name == "python.exe" and ("autotest.py" in command_line or project_str in command_line):
+            pids.append(pid)
+        elif name == "unrealeditor-cmd.exe" and project_str in command_line:
+            pids.append(pid)
+    return pids
+
+
+def _find_lingering_processes(project_str: str) -> list[int]:
+    """Enumerate lingering UE processes using WMIC or PowerShell."""
+    wmic_cmd = [
+        "wmic", "process", "where",
+        "Name='python.exe' or Name='unrealeditor-cmd.exe'",
+        "get", "Name,CommandLine,ProcessId", "/FORMAT:CSV",
+    ]
+    try:
+        output = subprocess.run(
+            wmic_cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        return _parse_process_csv(output, project_str)
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        pass
+
+    ps_cmd = (
+        "Get-CimInstance Win32_Process | "
+        "Where-Object { $_.Name -eq 'python.exe' -or $_.Name -eq 'UnrealEditor-Cmd.exe' } | "
+        "Select-Object Name, ProcessId, CommandLine | "
+        "ConvertTo-Csv -NoTypeInformation"
+    )
+    try:
+        output = subprocess.run(
+            ["powershell", "-Command", ps_cmd],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        return _parse_process_csv(output, project_str)
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        pass
+
+    return []
+
+
 def _wait_for_lingering_ue_processes(project_path: Path, max_wait_seconds: float = 600.0) -> bool:
     project_str = str(project_path.resolve()).lower()
     start = time.perf_counter()
     while True:
-        remaining = []
-        try:
-            output = subprocess.run(
-                ["tasklist", "/FO", "CSV", "/V"],
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return True
-
-        for line in output.splitlines()[1:]:
-            parts = [p.strip('"') for p in line.split("\",\"")]
-            if len(parts) < 9:
-                continue
-            image_name = parts[0].lower()
-            command_line = parts[8].lower()
-            if image_name == "python.exe" and (project_str in command_line or "autotest.py" in command_line):
-                remaining.append(parts[0])
-                continue
-            if image_name == "unrealeditor-cmd.exe" and project_str in command_line:
-                remaining.append(parts[0])
-
+        remaining = _find_lingering_processes(project_str)
         if not remaining:
             return True
         if time.perf_counter() - start > max_wait_seconds:
-            # Kill remaining processes
-            for name in remaining:
-                subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True)
+            for pid in remaining:
+                subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
             return False
         time.sleep(2.0)
 
