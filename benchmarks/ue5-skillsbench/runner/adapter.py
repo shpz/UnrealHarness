@@ -333,6 +333,14 @@ class KimiCodeAdapter(Adapter):
                         prompt_parts.append(skill_md.read_text(encoding="utf-8"))
         prompt = "\n".join(prompt_parts)
 
+        prompt_parts.append("\n\n## Workspace Contract\n\n")
+        prompt_parts.append(
+            "- All compilation, test execution, and report generation must happen inside the current project directory.\n"
+            "- Do not create additional git worktrees or copy the project to an external path to run Unreal Engine commands.\n"
+            "- When invoking long-running scripts such as autotest.py, wait for the process to finish. Do not run them in the background.\n"
+        )
+        prompt = "\n".join(prompt_parts)
+
         # Write prompt to file for reference
         prompt_path = artifacts_dir / "agent.prompt.md"
         prompt_path.write_text(prompt, encoding="utf-8")
