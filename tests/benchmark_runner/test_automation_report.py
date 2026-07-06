@@ -107,6 +107,38 @@ class AutomationReportTests(unittest.TestCase):
         self.assertEqual(result.executed_tests, 0)
         self.assertFalse(result.can_confirm_results)
 
+    def test_autotest_results_ignore_synthetic_placeholders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            automation_dir = project / "Saved" / "Automation"
+            automation_dir.mkdir(parents=True)
+            (automation_dir / "autotest_results.json").write_text(
+                json.dumps(
+                    {
+                        "modules": [
+                            {
+                                "name": "TPSampleTest",
+                                "results": {
+                                    "tests": [
+                                        {"name": "TPSampleTest (NO TESTS PARSED)", "passed": False},
+                                        {"name": "TPSampleTest (TIMEOUT)", "passed": False},
+                                        {"name": "TPSample.Input.Math.Normalize", "passed": True},
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = automation_report.parse_automation_report(project)
+
+        self.assertEqual(result.parser, "autotest-results-json")
+        self.assertEqual(result.executed_tests, 1)
+        self.assertEqual(result.passed_tests, 1)
+        self.assertEqual([test.name for test in result.tests], ["TPSample.Input.Math.Normalize"])
+
 
 if __name__ == "__main__":
     unittest.main()

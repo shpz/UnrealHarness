@@ -114,6 +114,13 @@ def _parse_native_index(index_path: Path) -> AutomationReportResult:
     return AutomationReportResult(parser="native-index-json", source_path=str(index_path), tests=tests)
 
 
+_SYNTHETIC_SUFFIXES = ("(NO TESTS PARSED)", "(TIMEOUT)")
+
+
+def _is_synthetic_test_name(name: str) -> bool:
+    return any(name.strip().endswith(suffix) for suffix in _SYNTHETIC_SUFFIXES)
+
+
 def _parse_autotest_results(results_path: Path) -> AutomationReportResult:
     try:
         raw = json.loads(results_path.read_text(encoding="utf-8-sig"))
@@ -124,8 +131,8 @@ def _parse_autotest_results(results_path: Path) -> AutomationReportResult:
     for module in raw.get("modules") or []:
         results = module.get("results") or {}
         for test in results.get("tests") or []:
-            name = str(test.get("name") or "")
-            if not name:
+            name = str(test.get("name") or "").strip()
+            if not name or _is_synthetic_test_name(name):
                 continue
             tests.append(
                 AutomationTestResult(
