@@ -100,12 +100,15 @@ def _helper_has_meaningful_diff(project_path: Path) -> bool:
     helper_source = project_path / "Source" / "TPSample" / "Private" / "TPSampleErrorAccumulator.cpp"
     if not helper_source.exists():
         return False
-    result = subprocess.run(
-        ["git", "diff", "HEAD", "--", str(helper_source)],
-        cwd=project_path,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "diff", "HEAD", "--", str(helper_source)],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return False
     diff = result.stdout.strip()
     if not diff:
         return False

@@ -137,8 +137,8 @@ int32 FTPSampleErrorAccumulator::Flush(TFunctionRef<void(const FString& Code, co
             project = root / "TPSample"
             _write_project_shell(project)
             # Commit the fixed helper as HEAD so the only uncommitted change is a comment.
-            subprocess.run(["git", "add", "Source/TPSample/Private/TPSampleErrorAccumulator.cpp"], cwd=project, capture_output=True, text=True)
-            subprocess.run(["git", "commit", "-m", "fix helper"], cwd=project, capture_output=True, text=True)
+            subprocess.run(["git", "add", "Source/TPSample/Private/TPSampleErrorAccumulator.cpp"], cwd=project, check=True, capture_output=True, text=True)
+            subprocess.run(["git", "commit", "-m", "fix helper"], cwd=project, check=True, capture_output=True, text=True)
             # Modify helper with only whitespace/comment changes
             helper_path = project / "Source" / "TPSample" / "Private" / "TPSampleErrorAccumulator.cpp"
             original = helper_path.read_text(encoding="utf-8")
@@ -195,12 +195,12 @@ def _write_project_shell(project: Path, helper_code: str | None = None) -> None:
         helper_code = "void ReportError() { if (Event.Code == Code) { return; } }\n"
     helper_path = source / "TPSample" / "Private" / "TPSampleErrorAccumulator.cpp"
     # Seed a git baseline so the verifier can detect meaningful production diffs.
-    subprocess.run(["git", "init"], cwd=project, capture_output=True, text=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project, capture_output=True, text=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=project, capture_output=True, text=True)
+    subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=project, check=True, capture_output=True, text=True)
     helper_path.write_text(_BUGGY_HELPER_BASELINE, encoding="utf-8")
-    subprocess.run(["git", "add", "."], cwd=project, capture_output=True, text=True)
-    subprocess.run(["git", "commit", "-m", "baseline"], cwd=project, capture_output=True, text=True)
+    subprocess.run(["git", "add", "."], cwd=project, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "baseline"], cwd=project, check=True, capture_output=True, text=True)
     helper_path.write_text(helper_code, encoding="utf-8")
 
 
