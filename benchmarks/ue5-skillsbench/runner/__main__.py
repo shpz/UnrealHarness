@@ -256,7 +256,10 @@ def cmd_run_single(args: argparse.Namespace) -> int:
         setup_stderr.write_text(result.stderr, encoding="utf-8")
         setup_result["exit_code"] = result.returncode
         if result.returncode != 0:
-            print(f"Setup failed: {setup_stderr}", file=sys.stderr)
+            print(
+                f"Setup failed: {setup_stderr.read_text(encoding='utf-8', errors='ignore')}",
+                file=sys.stderr,
+            )
             return 1
 
         # Commit setup baseline (allow empty in case setup makes no changes)

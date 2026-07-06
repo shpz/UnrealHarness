@@ -8,6 +8,29 @@ import unittest
 autotest = importlib.import_module("skills.ue-autotest.scripts.autotest")
 
 
+class AutotestOverallExitCodeTests(unittest.TestCase):
+    def test_overall_exit_code_passes(self) -> None:
+        results = {
+            "modules": [{"timedOut": False, "results": {"tests": []}}],
+            "overall": {"failed": 0},
+        }
+        self.assertEqual(autotest._overall_exit_code(results), 0)
+
+    def test_overall_exit_code_fails_on_failed_tests(self) -> None:
+        results = {
+            "modules": [{"timedOut": False, "results": {"tests": []}}],
+            "overall": {"failed": 2},
+        }
+        self.assertEqual(autotest._overall_exit_code(results), 1)
+
+    def test_overall_exit_code_fails_on_timeout(self) -> None:
+        results = {
+            "modules": [{"timedOut": True, "results": {"tests": []}}],
+            "overall": {"failed": 0},
+        }
+        self.assertEqual(autotest._overall_exit_code(results), 1)
+
+
 class AutotestPlaceholderTests(unittest.TestCase):
     def test_build_module_results_does_not_inject_placeholder(self) -> None:
         run_result = {

@@ -901,8 +901,16 @@ def main() -> int:
             check=False,
         )
 
-    # ── 按失败数确定退出码 ──
-    return 1 if all_results["overall"]["failed"] > 0 else 0
+    # ── 按失败数或超时确定退出码 ──
+    return _overall_exit_code(all_results)
+
+
+def _overall_exit_code(all_results: dict[str, Any]) -> int:
+    """Return a non-zero exit code if any test failed or any module timed out."""
+    any_timed_out = any(
+        module.get("timedOut", False) for module in all_results["modules"]
+    )
+    return 1 if any_timed_out or all_results["overall"]["failed"] > 0 else 0
 
 
 if __name__ == "__main__":

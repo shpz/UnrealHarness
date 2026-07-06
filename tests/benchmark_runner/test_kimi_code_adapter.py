@@ -133,6 +133,34 @@ class KimiCodeAdapterPostRunTests(unittest.TestCase):
 
 
 class WaitForLingeringUeProcessesTests(unittest.TestCase):
+    def test_does_not_kill_python_pid_with_similar_longer_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project_path = Path(tmp)
+            project_path.mkdir(exist_ok=True)
+            longer_path = str(project_path) + "extra"
+            fake_output = (
+                "Node,Name,CommandLine,ProcessId\r\n"
+                f'DESKTOP,python.exe,"python.exe {longer_path}\\autotest.py arg",12345\r\n'
+            )
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd[:3] == ["wmic", "process", "where"]:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=fake_output, stderr="")
+                if cmd[:3] == ["taskkill", "/F", "/PID"]:
+                    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+            with patch.object(subprocess, "run", side_effect=fake_run) as mock_run:
+                with patch.object(time, "sleep"):
+                    result = _wait_for_lingering_ue_processes(project_path, max_wait_seconds=-1.0)
+
+            self.assertTrue(result)
+            taskkill_calls = [
+                call for call in mock_run.call_args_list
+                if len(call.args[0]) >= 4 and call.args[0][:3] == ["taskkill", "/F", "/PID"]
+            ]
+            self.assertEqual(len(taskkill_calls), 0)
+
     def test_kills_matched_python_pid_on_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project_path = Path(tmp)

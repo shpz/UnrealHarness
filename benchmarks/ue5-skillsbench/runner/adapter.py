@@ -262,12 +262,15 @@ class CodexAdapter(Adapter):
 
 
 def _project_uses_external_worktree(project_path: Path) -> bool:
-    result = subprocess.run(
-        ["git", "rev-parse", "--absolute-git-dir"],
-        cwd=str(project_path),
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--absolute-git-dir"],
+            cwd=str(project_path),
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return False
     if result.returncode != 0:
         return False
     git_dir = Path(result.stdout.strip())
@@ -281,6 +284,26 @@ def _project_uses_external_worktree(project_path: Path) -> bool:
         except ValueError:
             pass
     return True
+
+
+def _command_line_matches_project(command_line: str, project_strs: list[str]) -> bool:
+    """Return True when command_line contains a project path as a whole path segment.
+
+    Treats the path as matched only when it is an exact token or is followed by
+    a path separator. This prevents a shorter path such as ``C:\\.kh\\r1234567``
+    from matching a longer unrelated path such as ``C:\\.kh\\r12345678``.
+    """
+    # Strip quotes and split the command line into rough tokens so a path
+    # embedded in the middle of arguments is still inspected independently.
+    tokens = command_line.replace('"', " ").replace("'", " ").split()
+    for p in project_strs:
+        for token in tokens:
+            if token == p:
+                return True
+            for sep in ("\\", "/"):
+                if token.startswith(p + sep):
+                    return True
+    return False
 
 
 def _parse_process_csv(output: str, project_strs: list[str]) -> list[int]:
@@ -299,9 +322,9 @@ def _parse_process_csv(output: str, project_strs: list[str]) -> list[int]:
             pid = int(pid_str)
         except ValueError:
             continue
-        if name == "python.exe" and "autotest.py" in command_line and any(p in command_line for p in project_strs):
+        if name == "python.exe" and "autotest.py" in command_line and _command_line_matches_project(command_line, project_strs):
             pids.append(pid)
-        elif name == "unrealeditor-cmd.exe" and any(p in command_line for p in project_strs):
+        elif name == "unrealeditor-cmd.exe" and _command_line_matches_project(command_line, project_strs):
             pids.append(pid)
     return pids
 
