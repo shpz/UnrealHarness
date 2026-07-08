@@ -90,3 +90,5 @@ Plugins/*/Intermediate/*
 **/.claude/*
 
 Tools/**/dist/*
+
+.cache

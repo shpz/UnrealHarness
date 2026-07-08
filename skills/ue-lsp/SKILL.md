@@ -34,7 +34,7 @@ description: >
 信任任何 UE C++ LSP 结果之前，先从 skill root 运行状态脚本：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-root>/scripts/status.ps1" -ProjectPath "<Project.uproject>" -SourceFile "<File.cpp>"
+python "<skill-root>/status.py" --project "<Project.uproject>" --source-file "<File.cpp>"
 ```
 
 把输出视为 `ue_lsp_status`：
