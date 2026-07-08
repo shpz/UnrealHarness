@@ -11,6 +11,10 @@ skills:
     path: skills/ue-build
   ue-autotest:
     path: skills/ue-autotest
+    # ue-autotest hard-depends on ue-build in production:
+    # autotest.py invokes ../ue-build/build.py for compilation.
+    requires:
+      - ue-build
 
 conditions:
   - id: no-skills
@@ -18,9 +22,6 @@ conditions:
   - id: ue-build-only
     skills:
       - ue-build
-  - id: ue-autotest-only
-    skills:
-      - ue-autotest
   - id: ue-autotest-with-build
     skills:
       - ue-build

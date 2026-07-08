@@ -52,7 +52,7 @@ UE5 benchmark 允许使用 Windows、本机 Unreal Engine、隔离 workspace 和
 当前主要不足：
 
 - 任务只覆盖 `ue-build`，尚未覆盖 `ue-autotest`。
-- condition 不能表达 `ue-autotest-only`、`ue-autotest-with-build` 等实验矩阵。
+- condition 不能表达 `ue-autotest-with-build` 等实验矩阵。
 - oracle 只有 `oracle.patch` adapter 形状，但当前任务没有稳定 oracle baseline。
 - verifier 输出结构还未对 Automation report、scope、报告产物形成统一协议。
 - runner 不记录 skill 使用轨迹、命令次数、重试次数、首次有效行动等过程指标。
@@ -162,30 +162,29 @@ skills:
     path: skills/ue-build
   ue-autotest:
     path: skills/ue-autotest
+    requires: [ue-build]
 
 conditions:
   - id: no-skills
     skills: []
   - id: ue-build-only
     skills: [ue-build]
-  - id: ue-autotest-only
-    skills: [ue-autotest]
   - id: ue-autotest-with-build
     skills: [ue-build, ue-autotest]
 ```
 
 不设 `all-ue-skills` condition。它与 `ue-autotest-with-build` 的 skill 集合完全相同，作为独立 condition 只会让同一实验配置重复消耗 UE 构建时间而不产生新信息。未来加入第三个 UE skill（如 `ue-lsp`）时再新增该 condition——旧报告中本就没有此字段，届时新增不构成兼容性破坏。
 
-`ue-autotest-only` 保留定义但 MVP 不强制跑，未来用于回答"autotest skill 是否依赖 build skill 才有效"。
+不设 `ue-autotest-only` condition。`ue-autotest` 在生产中硬依赖 `ue-build`（`autotest.py` 直接调用 `../ue-build/build.py` 编译），单独注入 autotest 得到的是残缺 harness，测出的差异反映的是依赖缺失而不是 skill 本身的价值。skill 依赖通过 `skills.<name>.requires` 声明，runner 在加载 `benchmark.yaml` 时校验每个 condition 是否包含其 skill 的全部依赖，违反即报错。"autotest skill 的边际贡献"由 `ue-build-only` 与 `ue-autotest-with-build` 的对比回答。
 
 MVP 跑数时不要求每个任务都跑所有 conditions。推荐按任务类型选择：
 
 | 任务类型 | 必跑 conditions | 可选 conditions |
 | --- | --- | --- |
 | build | `no-skills`, `ue-build-only`, `ue-autotest-with-build` | 无 |
-| autotest authoring | `no-skills`, `ue-build-only`, `ue-autotest-with-build` | `ue-autotest-only` |
-| autotest repair | `no-skills`, `ue-build-only`, `ue-autotest-with-build` | `ue-autotest-only` |
-| autotest reporting | `no-skills`, `ue-autotest-with-build` | `ue-autotest-only` |
+| autotest authoring | `no-skills`, `ue-build-only`, `ue-autotest-with-build` | 无 |
+| autotest repair | `no-skills`, `ue-build-only`, `ue-autotest-with-build` | 无 |
+| autotest reporting | `no-skills`, `ue-autotest-with-build` | `ue-build-only` |
 
 condition 选择逻辑：build 任务跑 `ue-autotest-with-build` 用于观察附加无关 skill 是否造成负迁移；autotest 任务跑 `ue-build-only` 用于分离 `ue-autotest` 的边际贡献（相对"只有 build skill"的基线，而不仅是相对裸基线）。
 
@@ -554,7 +553,7 @@ python -m benchmarks.ue5-skillsbench.runner report --run-id <run-id>
 
 2026-07-02 评审敲定，与正文一致，冲突时以正文为准：
 
-1. **不设 `all-ue-skills` condition**：与 `ue-autotest-with-build` 完全重复，MVP 为 4 个 conditions；`ue-autotest-only` 保留定义但不强制跑。
+1. **不设 `all-ue-skills` condition**：与 `ue-autotest-with-build` 完全重复，MVP 为 4 个 conditions；`ue-autotest-only` 保留定义但不强制跑。（2026-07-08 修订：`ue-autotest-only` 已删除——`ue-autotest` 生产中硬依赖 `ue-build`，单独注入是残缺 harness；依赖以 `skills.<name>.requires` 声明并由 runner 校验，现为 3 个 conditions。）
 2. **oracle 验收合并为单个 `validate-task --repeat 3` 命令**：一条命令原子覆盖"setup 失败 → oracle 通过 × N 轮"，不拆为两个命令；声明 oracle 但文件缺失判为失败。
 3. **trajectory 指标 MVP 只收 runner 可直接观测的第一档**：`command_invocations`、`skill_file_reads` 预留字段填 `unknown`，不做 stdout 正则猜测。
 4. **build 任务账**：`tps-build-basic` 降为 smoke，新增 `tps-build-fix-module-dependency` 补足 3 个正式任务；`tps-build-incremental` 的 skill 敏感性确认纳入 Phase A 验收。

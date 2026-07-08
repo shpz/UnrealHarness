@@ -36,6 +36,7 @@ class RunnerConfig:
 class SkillConfig:
     name: str
     path: str
+    requires: list[str] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass
@@ -99,11 +100,15 @@ def load_benchmark_yaml(path: Path) -> BenchmarkConfig:
     skills = []
     if isinstance(skills_raw, dict):
         for name, cfg in skills_raw.items():
-            skills.append(SkillConfig(name=name, path=cfg.get("path", f"skills/{name}")))
+            skills.append(SkillConfig(
+                name=name,
+                path=cfg.get("path", f"skills/{name}"),
+                requires=cfg.get("requires", []),
+            ))
     elif isinstance(skills_raw, list):
         for name in skills_raw:
             skills.append(SkillConfig(name=name, path=f"skills/{name}"))
-    return BenchmarkConfig(
+    config = BenchmarkConfig(
         project=ProjectConfig(
             source=proj["source"],
             uproject=proj["uproject"],
@@ -124,6 +129,31 @@ def load_benchmark_yaml(path: Path) -> BenchmarkConfig:
             artifacts=raw["runner"].get("artifacts", []),
         ),
     )
+    errors = validate_skill_dependencies(config)
+    if errors:
+        raise ValueError("Invalid benchmark.yaml: " + "; ".join(errors))
+    return config
+
+
+def validate_skill_dependencies(config: BenchmarkConfig) -> list[str]:
+    """Ensure every condition includes the dependencies of its skills.
+
+    ue-autotest hard-depends on ue-build (autotest.py calls ue-build/build.py),
+    so a condition injecting a skill without its declared dependencies would
+    benchmark a broken harness rather than the skill itself.
+    """
+    errors: list[str] = []
+    requires_by_skill = {skill.name: skill.requires for skill in config.skills}
+    for condition in config.conditions:
+        included = set(condition.skills)
+        for skill_name in condition.skills:
+            for dependency in requires_by_skill.get(skill_name, []):
+                if dependency not in included:
+                    errors.append(
+                        f"condition '{condition.id}' includes skill '{skill_name}' "
+                        f"but is missing its required dependency '{dependency}'"
+                    )
+    return errors
 
 
 def load_task_toml(path: Path) -> TaskConfig:
