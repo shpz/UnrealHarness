@@ -11,25 +11,27 @@ import sys
 RUNNER = Path(__file__).resolve().parents[2] / "runner"
 sys.path.insert(0, str(RUNNER))
 
-from automation_report import parse_automation_report  # noqa: E402
+from automation_report import parse_automation_report, parse_editor_log_evidence  # noqa: E402
 from verifier_result import make_result, write_result  # noqa: E402
 
 
 REQUIRED_PREFIXES = ["TPSample.Input.", "TPSample.Error."]
 FORBIDDEN_PREFIXES = ["TPSample.Performance."]
+STRUCTURED_PARSERS = {"native-index-json", "autotest-results-json"}
 
 
 def main() -> int:
     project_path = Path(os.environ.get("PROJECT_PATH", "."))
     artifacts_path = Path(os.environ.get("ARTIFACTS_PATH", "artifacts"))
     report = parse_automation_report(project_path)
+    log_evidence = parse_editor_log_evidence(project_path)
     markdown = _find_markdown_report(project_path)
 
     checks = []
     checks.append({
         "name": "automation_results_present",
-        "passed": report.can_confirm_results,
-        "details": report.source_path or "no Automation report found",
+        "passed": report.can_confirm_results and report.parser in STRUCTURED_PARSERS,
+        "details": report.source_path or "no structured Automation report found",
     })
 
     names = [test.name for test in report.tests]
@@ -41,10 +43,31 @@ def main() -> int:
         })
 
     forbidden = [name for name in names if any(name.startswith(prefix) for prefix in FORBIDDEN_PREFIXES)]
+    executed_names = {test.name for test in log_evidence.tests}
+    forbidden_executed = [
+        name for name in executed_names
+        if any(name.startswith(prefix) for prefix in FORBIDDEN_PREFIXES)
+    ]
     checks.append({
         "name": "performance_scope_excluded",
-        "passed": not forbidden,
-        "details": ", ".join(forbidden),
+        "passed": not forbidden and not forbidden_executed,
+        "details": ", ".join(sorted(set(forbidden) | set(forbidden_executed))),
+    })
+
+    # The structured report must be corroborated by editor-log execution
+    # evidence: each required scope needs at least three executed tests in
+    # the logs. A hand-written index.json without a matching editor run fails.
+    uncovered_prefixes = [
+        prefix for prefix in REQUIRED_PREFIXES
+        if sum(1 for name in executed_names if name.startswith(prefix)) < 3
+    ]
+    checks.append({
+        "name": "editor_log_confirms_execution",
+        "passed": log_evidence.can_confirm_results and not uncovered_prefixes,
+        "details": (
+            f"log={log_evidence.source_path or 'missing'}"
+            + (f"; uncovered={', '.join(uncovered_prefixes)}" if uncovered_prefixes else "")
+        ),
     })
 
     checks.append({
@@ -76,7 +99,7 @@ def main() -> int:
             failure_class = "automation-discovery" if report.executed_tests == 0 else "test"
         elif check["name"] == "markdown_report":
             failure_class = "reporting"
-        elif check["name"] == "no_source_changes_after_setup":
+        elif check["name"] in {"no_source_changes_after_setup", "editor_log_confirms_execution"}:
             failure_class = "cheating"
         else:
             failure_class = "automation-discovery"

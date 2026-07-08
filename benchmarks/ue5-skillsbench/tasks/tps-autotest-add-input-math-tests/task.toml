@@ -28,7 +28,4 @@ timeout_minutes = 60
 [artifacts]
 required = [
   "verifier_result.json",
-  "build.log",
-  "automation/index.json",
-  "automation/autotest_results.json",
 ]

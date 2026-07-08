@@ -131,6 +131,45 @@ int32 FTPSampleErrorAccumulator::Flush(TFunctionRef<void(const FString& Code, co
             verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
             self.assertTrue(verifier_result["passed"])
 
+    def test_verifier_accepts_index_based_dedup_comparison(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "TPSample"
+            _write_project_shell(
+                project,
+                helper_code='''
+void FTPSampleErrorAccumulator::ReportError(const FString& Code, const FString& Message)
+{
+    for (int32 Index = 0; Index < PendingErrors.Num(); ++Index)
+    {
+        if (PendingErrors[Index].Code == Code)
+        {
+            PendingErrors[Index].Message = Message;
+            return;
+        }
+    }
+    PendingErrors.Add({Code, Message});
+}
+''',
+            )
+            _write_test_module(project, strong_assertion=True)
+            _write_report(
+                project,
+                [
+                    "TPSample.Error.Accumulator.RecordsErrors",
+                    "TPSample.Error.Accumulator.FlushClearsQueue",
+                    "TPSample.Error.Accumulator.DedupesBroadcast",
+                ],
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            result = _run_verifier(project, artifacts)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
+            self.assertTrue(verifier_result["passed"])
+
     def test_verifier_rejects_whitespace_only_helper_change(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -295,6 +334,8 @@ def _run_verifier(project: Path, artifacts: Path) -> subprocess.CompletedProcess
         "PROJECT_PATH": str(project),
         "ARTIFACTS_PATH": str(artifacts),
         "BENCHMARK_ROOT": str(Path("benchmarks/ue5-skillsbench").resolve()),
+        # Unit tests verify artifact parsing; no engine rerun available here.
+        "SKILLSBENCH_RERUN_AUTOMATION": "0",
     }
     return subprocess.run(
         [sys.executable, str(VERIFIER.resolve())],

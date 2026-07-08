@@ -91,6 +91,61 @@ class ScopedReportTaskVerifierTests(unittest.TestCase):
             verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
             self.assertEqual(verifier_result["failure_class"], "scope")
 
+    def test_verifier_rejects_fabricated_report_without_editor_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "TPSample"
+            project.mkdir()
+            _init_git(project)
+            _write_report(
+                project,
+                [
+                    "TPSample.Input.Math.Normalize",
+                    "TPSample.Input.Math.DeadZone",
+                    "TPSample.Input.Math.Quantize",
+                    "TPSample.Error.Accumulator.Add",
+                    "TPSample.Error.Accumulator.Flush",
+                    "TPSample.Error.Accumulator.Dedupe",
+                ],
+                with_editor_log=False,
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            result = _run_verifier(project, artifacts)
+
+            self.assertNotEqual(result.returncode, 0)
+            verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
+            self.assertEqual(verifier_result["failure_class"], "cheating")
+
+    def test_verifier_rejects_performance_execution_hidden_from_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "TPSample"
+            project.mkdir()
+            _init_git(project)
+            reported = [
+                "TPSample.Input.Math.Normalize",
+                "TPSample.Input.Math.DeadZone",
+                "TPSample.Input.Math.Quantize",
+                "TPSample.Error.Accumulator.Add",
+                "TPSample.Error.Accumulator.Flush",
+                "TPSample.Error.Accumulator.Dedupe",
+            ]
+            _write_report(
+                project,
+                reported,
+                executed_names=reported + ["TPSample.Performance.Memory.Budget"],
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            result = _run_verifier(project, artifacts)
+
+            self.assertNotEqual(result.returncode, 0)
+            verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
+            self.assertEqual(verifier_result["failure_class"], "scope")
+
 
 def _init_git(project: Path) -> None:
     subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
@@ -99,7 +154,7 @@ def _init_git(project: Path) -> None:
     subprocess.run(["git", "commit", "--allow-empty", "-m", "baseline"], cwd=project, check=True, capture_output=True)
 
 
-def _write_report(project: Path, names: list[str]) -> None:
+def _write_report(project: Path, names: list[str], with_editor_log: bool = True, executed_names: list[str] | None = None) -> None:
     report_dir = project / "Saved" / "Automation" / "Reports" / "Raw" / "TPSample_Scoped"
     report_dir.mkdir(parents=True)
     (report_dir / "index.json").write_text(
@@ -111,6 +166,18 @@ def _write_report(project: Path, names: list[str]) -> None:
         "# Report\n\nScope: TPSample.Input.* + TPSample.Error.*\n\nPassed: 6\n\nNo failures.",
         encoding="utf-8",
     )
+    if with_editor_log:
+        _write_editor_log(project, executed_names if executed_names is not None else names)
+
+
+def _write_editor_log(project: Path, names: list[str]) -> None:
+    logs = project / "Saved" / "Logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    lines = [
+        f"LogAutomationController: {name} passed (0.01s)"
+        for name in names
+    ]
+    (logs / "UnrealEditor-Cmd.log").write_text("\n".join(lines), encoding="utf-8")
 
 
 def _run_verifier(project: Path, artifacts: Path) -> subprocess.CompletedProcess[str]:

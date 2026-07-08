@@ -146,6 +146,16 @@ def describe_skill_injection(
     }
 
 
+def check_required_artifacts(required: list[str], artifacts_path: Path) -> list[str]:
+    """Return required artifact entries missing from the artifacts directory."""
+    missing: list[str] = []
+    for entry in required:
+        target = artifacts_path / entry
+        if not target.exists():
+            missing.append(entry)
+    return missing
+
+
 def duration_seconds_or_zero(metric: dict | None) -> float:
     if not metric:
         return 0.0
@@ -313,6 +323,17 @@ def cmd_run_single(args: argparse.Namespace) -> int:
     automation_artifacts = collect_automation_artifacts(project_path, artifacts_path)
     skill_injection = describe_skill_injection(repo_root, workspace_root, config, condition, skills_root)
 
+    task_toml_path = task_dir / "task.toml"
+    required_artifacts: list[str] = []
+    if task_toml_path.exists():
+        required_artifacts = load_task_toml(task_toml_path).artifacts.required
+    missing_artifacts = check_required_artifacts(required_artifacts, artifacts_path)
+    if missing_artifacts:
+        print(
+            f"Warning: missing required artifacts: {', '.join(missing_artifacts)}",
+            file=sys.stderr,
+        )
+
     junction_dir = layout.get("junction_dir")
     if junction_dir:
         try:
@@ -365,6 +386,8 @@ def cmd_run_single(args: argparse.Namespace) -> int:
             "diff": str(diff_path),
             "verifier_result": str(artifacts_path / "verifier_result.json"),
             "automation": [str(path) for path in automation_artifacts],
+            "required": required_artifacts,
+            "missing_required": missing_artifacts,
         },
     }
 

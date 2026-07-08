@@ -130,6 +130,38 @@ class AddInputMathTaskVerifierTests(unittest.TestCase):
             verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
             self.assertTrue(verifier_result["passed"])
 
+    def test_verifier_accepts_addrange_editor_target_registration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "TPSample"
+            _write_project_shell(project)
+            (project / "Source" / "TPSampleEditor.Target.cs").write_text(
+                'ExtraModuleNames.AddRange(new string[] { "TPSample", "TPSampleTest" });\n',
+                encoding="utf-8",
+            )
+            # Game target mentions the module only inside a comment.
+            (project / "Source" / "TPSample.Target.cs").write_text(
+                'ExtraModuleNames.Add("TPSample");\n// do not add TPSampleTest here\n',
+                encoding="utf-8",
+            )
+            _write_test_module(project)
+            _write_report(
+                project,
+                [
+                    "TPSample.Input.Math.Normalize",
+                    "TPSample.Input.Math.DeadZone",
+                    "TPSample.Input.Math.Quantize",
+                ],
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            result = _run_verifier(project, artifacts)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            verifier_result = json.loads((artifacts / "verifier_result.json").read_text(encoding="utf-8"))
+            self.assertTrue(verifier_result["passed"])
+
     def test_verifier_rejects_missing_test_module_even_when_report_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -341,6 +373,8 @@ def _run_verifier(project: Path, artifacts: Path) -> subprocess.CompletedProcess
         "PROJECT_PATH": str(project),
         "ARTIFACTS_PATH": str(artifacts),
         "BENCHMARK_ROOT": str(Path("benchmarks/ue5-skillsbench").resolve()),
+        # Unit tests verify artifact parsing; no engine rerun available here.
+        "SKILLSBENCH_RERUN_AUTOMATION": "0",
     }
     return subprocess.run(
         [sys.executable, str(VERIFIER.resolve())],

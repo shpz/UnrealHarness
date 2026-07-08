@@ -26,6 +26,11 @@ def run_verifier(
             "ARTIFACTS_PATH": str(artifacts_path),
             "BENCHMARK_ROOT": str(benchmark_root),
         }.items() if v is not None},
+        # Real trials rerun Automation scopes authoritatively instead of
+        # trusting workspace report files. Overridable for engine-less runs.
+        "SKILLSBENCH_RERUN_AUTOMATION": subprocess.os.environ.get(
+            "SKILLSBENCH_RERUN_AUTOMATION", "1"
+        ),
     }
 
     if verifier_script.suffix == ".py":

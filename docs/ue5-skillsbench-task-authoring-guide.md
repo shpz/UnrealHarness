@@ -105,6 +105,8 @@ Use `benchmarks/ue5-skillsbench/runner/verifier_result.py` to build and validate
 
 For UE Automation tasks, use `benchmarks/ue5-skillsbench/runner/automation_report.py` to parse native reports, `autotest_results.json`, or editor logs. Do not parse skill directories or rely on agent claims.
 
+Automation verifiers should not trust workspace report files alone: they can be fabricated. Use `benchmarks/ue5-skillsbench/runner/authoritative_rerun.py` to rerun the requested scope during verification. The runner enables reruns for real trials via `SKILLSBENCH_RERUN_AUTOMATION=1`; unit tests and engine-less environments set it to `0` and fall back to artifact parsing. For execution-only tasks (no source changes allowed), corroborate structured reports against editor-log evidence via `parse_editor_log_evidence`.
+
 ## Failure Classes
 
 Use stable failure classes so reports can aggregate failures across tasks:

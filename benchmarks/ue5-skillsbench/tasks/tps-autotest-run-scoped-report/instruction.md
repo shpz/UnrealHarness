@@ -14,3 +14,5 @@ The markdown report alone is not sufficient. You must also leave at least one st
 - `Saved/Automation/autotest_results.json` (structured JSON summary).
 
 If you use `ue-autotest`, pass `-ReportExportPath="..."` to generate the native index.json and autotest_results.json; the skill also creates the markdown report automatically.
+
+Keep the editor log produced by the test run (e.g. `Saved/Logs/UnrealEditor-Cmd.log`). The verifier cross-checks the structured report against the editor log to confirm the tests were actually executed.

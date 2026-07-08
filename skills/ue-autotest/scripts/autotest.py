@@ -437,10 +437,6 @@ def reset_report_directory(report_dir: Path) -> None:
         shutil.rmtree(report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
 
-    stale_report_file = report_dir / "index.json"
-    if stale_report_file.exists():
-        _error_exit(f"清理陈旧自动化报告失败：{stale_report_file}")
-
 
 def resolve_automation_log_file(
     logs_dir: Path, preferred_log_file: Path, project_name: str
@@ -610,6 +606,19 @@ def parse_report_results(report_dir: Path) -> dict[str, Any]:
     }
 
 
+# 未配置原生报告导出时，UE 输出本地化的 "Test Completed" 行。
+# 兼容中文（成功/失败）与英文（Success/Failed）结果，取 Path= 全名作为测试名。
+_TEST_COMPLETED_RE = re.compile(
+    r"LogAutomationController:\s+(?:Display|Error):\s+Test Completed\.\s+"
+    r"Result=\{(?P<result>[^}]+)\}\s+"
+    r"(?:Name=\{(?P<name>[^}]*)\}\s+)?"
+    r"Path=\{(?P<path>[^}]+)\}",
+    re.IGNORECASE,
+)
+_PASS_RESULTS = {"成功", "success", "passed", "pass"}
+_FAIL_RESULTS = {"失败", "failed", "failure", "fail", "error"}
+
+
 def parse_test_results(
     log_file: Path, patterns: dict[str, str], report_dir: Optional[Path] = None
 ) -> dict[str, Any]:
@@ -631,6 +640,29 @@ def parse_test_results(
     current_test: Optional[dict[str, Any]] = None
 
     for line in log_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+        completed_match = _TEST_COMPLETED_RE.search(line)
+        if completed_match:
+            result_value = completed_match.group("result").strip().lower()
+            test_name = completed_match.group("path").strip()
+            if test_name and result_value in _PASS_RESULTS:
+                tests.append({
+                    "name": test_name,
+                    "passed": True,
+                    "duration": "",
+                    "error": None,
+                })
+                current_test = None
+                continue
+            if test_name and result_value in _FAIL_RESULTS:
+                current_test = {
+                    "name": test_name,
+                    "passed": False,
+                    "duration": "",
+                    "error": "",
+                }
+                tests.append(current_test)
+                continue
+
         passed_match = passed_re.search(line)
         if passed_match:
             tests.append({

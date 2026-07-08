@@ -11,7 +11,9 @@ import sys
 RUNNER = Path(__file__).resolve().parents[2] / "runner"
 sys.path.insert(0, str(RUNNER))
 
+from authoritative_rerun import run_authoritative_automation  # noqa: E402
 from automation_report import parse_automation_report  # noqa: E402
+from source_checks import target_includes_module, target_references_module  # noqa: E402
 from verifier_result import make_result, write_result  # noqa: E402
 
 
@@ -22,7 +24,11 @@ REQUIRED_DEPENDENCIES = {"Core", "CoreUObject", "Engine", "UnrealEd", "TPSample"
 def main() -> int:
     project_path = Path(os.environ.get("PROJECT_PATH", "."))
     artifacts_path = Path(os.environ.get("ARTIFACTS_PATH", "artifacts"))
-    report = parse_automation_report(project_path)
+
+    # Parse the agent's own artifacts before any rerun pollutes the workspace.
+    agent_report = parse_automation_report(project_path)
+    rerun_report = run_authoritative_automation(project_path, "TPSample.Input.Math")
+    report = rerun_report if rerun_report is not None else agent_report
 
     checks = []
     checks.extend(_registration_checks(project_path))
@@ -31,9 +37,15 @@ def main() -> int:
     math_tests = [test for test in report.tests if test.name.startswith(REQUIRED_PREFIX)]
     checks.append({
         "name": "automation_results_present",
-        "passed": report.can_confirm_results,
-        "details": report.source_path or "no Automation report found",
+        "passed": agent_report.can_confirm_results,
+        "details": agent_report.source_path or "no Automation report found",
     })
+    if rerun_report is not None:
+        checks.append({
+            "name": "authoritative_rerun_confirms_results",
+            "passed": rerun_report.can_confirm_results,
+            "details": rerun_report.source_path or "rerun produced no results",
+        })
     checks.append({
         "name": "math_scope_has_three_tests",
         "passed": len(math_tests) >= 3,
@@ -86,11 +98,11 @@ def _registration_checks(project_path: Path) -> list[dict]:
         },
         {
             "name": "editor_target_includes_test_module",
-            "passed": 'ExtraModuleNames.Add("TPSampleTest")' in editor_target_text,
+            "passed": target_includes_module(editor_target_text, "TPSampleTest"),
         },
         {
             "name": "game_target_excludes_test_module",
-            "passed": "TPSampleTest" not in game_target_text,
+            "passed": not target_references_module(game_target_text, "TPSampleTest"),
         },
         {
             "name": "test_module_dependencies",

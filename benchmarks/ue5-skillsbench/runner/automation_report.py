@@ -52,6 +52,61 @@ class AutomationReportResult:
         }
 
 
+def parse_automation_report_dir(automation_dir: Path) -> AutomationReportResult:
+    """Parse results strictly from one report directory (fresh verifier reruns).
+
+    Never falls back to other files in the project, so stale or hand-written
+    reports elsewhere cannot influence the outcome.
+    """
+    index_path = automation_dir / "index.json"
+    if index_path.exists():
+        parsed = _parse_native_index(index_path)
+        if parsed.tests:
+            return parsed
+
+    log_path = automation_dir / "automation.log"
+    if log_path.exists():
+        parsed = _parse_editor_log(log_path)
+        if parsed.tests:
+            return parsed
+
+    return AutomationReportResult(parser="none", source_path=None, tests=[])
+
+
+def parse_editor_log_evidence(project_path: Path) -> AutomationReportResult:
+    """Parse execution evidence strictly from editor logs, ignoring JSON reports.
+
+    Used to corroborate that reported tests were actually executed by an
+    editor process rather than fabricated as report files. Aggregates across
+    all logs found because sequential runs overwrite Saved/Logs.
+    """
+    merged: dict[str, AutomationTestResult] = {}
+    source: str | None = None
+    for log_path in _find_execution_logs(project_path):
+        parsed = _parse_editor_log(log_path)
+        if not parsed.tests:
+            continue
+        if source is None:
+            source = parsed.source_path
+        for test in parsed.tests:
+            merged.setdefault(test.name, test)
+    if not merged:
+        return AutomationReportResult(parser="none", source_path=None, tests=[])
+    return AutomationReportResult(
+        parser="editor-log-summary", source_path=source, tests=list(merged.values())
+    )
+
+
+def _find_execution_logs(project_path: Path) -> list[Path]:
+    candidates: dict[Path, None] = {path: None for path in _find_editor_logs(project_path)}
+    reports_root = project_path / "Saved" / "Automation" / "Reports"
+    if reports_root.exists():
+        for path in reports_root.rglob("automation.log"):
+            if path.is_file():
+                candidates[path] = None
+    return sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True)
+
+
 def parse_automation_report(project_path: Path) -> AutomationReportResult:
     for index_path in _find_native_index_files(project_path):
         parsed = _parse_native_index(index_path)
