@@ -101,7 +101,9 @@ def _registration_checks(project_path: Path) -> list[dict]:
 
 
 def _source_checks(project_path: Path) -> list[dict]:
-    test_files = list((project_path / "Source" / "TPSampleTest" / "Private").glob("*.cpp"))
+    # Tests may live in a nested Private subfolder (e.g. Private/Tests) and use any
+    # .cpp file name, so search recursively and validate by the declared scope.
+    test_files = list((project_path / "Source" / "TPSampleTest" / "Private").rglob("*.cpp"))
     combined = "\n".join(_read_text(path) for path in test_files)
     names = re.findall(r'"(TPSample\.Input\.Math\.[^"]+)"', combined)
     # UE exposes automation flags both as enum values (EAutomationTestFlags::X) and bitmask macros
@@ -118,7 +120,7 @@ def _source_checks(project_path: Path) -> list[dict]:
     return [
         {
             "name": "math_test_source_exists",
-            "passed": any("InputMath" in path.name and path.name.endswith("Test.cpp") for path in test_files),
+            "passed": bool(test_files) and len(names) >= 1,
         },
         {
             "name": "math_test_source_defines_three_tests",

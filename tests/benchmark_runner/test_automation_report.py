@@ -99,6 +99,48 @@ class AutomationReportTests(unittest.TestCase):
         self.assertEqual(result.passed_tests, 2)
         self.assertEqual(result.failed_tests, 1)
 
+    def test_parse_editor_log_with_chinese_test_completed_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            logs = project / "Saved" / "Logs"
+            logs.mkdir(parents=True)
+            (logs / "UnrealEditor-Cmd.log").write_text(
+                textwrap.dedent(
+                    """
+                    [2026.07.05-06.05.02:092][  0]LogAutomationTest: Error: Condition failed
+                    [2026.07.05-06.05.11:700][538]LogAutomationController: Display: Test Completed. Result={成功} Name={Add} Path={TPSample.Error.Accumulator.Add}
+                    [2026.07.05-06.05.11:724][541]LogAutomationController: Display: Test Completed. Result={成功} Name={Dedupe} Path={TPSample.Error.Accumulator.Dedupe}
+                    [2026.07.05-06.05.26:133][544]LogAutomationController: Error: Test Completed. Result={失败} Name={DedupesBroadcast} Path={TPSample.Error.Accumulator.DedupesBroadcast}
+                    [2026.07.05-06.05.26:157][547]LogAutomationController: Display: Test Completed. Result={Success} Name={FlushClearsQueue} Path={TPSample.Error.Accumulator.FlushClearsQueue}
+                    [2026.07.05-06.05.26:174][549]LogAutomationController: Display: Test Completed. Result={Failed} Name={RecordsErrors} Path={TPSample.Error.Accumulator.RecordsErrors}
+                    """
+                ).strip(),
+                encoding="utf-8",
+            )
+
+            result = automation_report.parse_automation_report(project)
+
+        self.assertEqual(result.parser, "editor-log-summary")
+        self.assertEqual(result.executed_tests, 5)
+        self.assertEqual(result.passed_tests, 3)
+        self.assertEqual(result.failed_tests, 2)
+        self.assertEqual(
+            [test.name for test in result.tests],
+            [
+                "TPSample.Error.Accumulator.Add",
+                "TPSample.Error.Accumulator.Dedupe",
+                "TPSample.Error.Accumulator.DedupesBroadcast",
+                "TPSample.Error.Accumulator.FlushClearsQueue",
+                "TPSample.Error.Accumulator.RecordsErrors",
+            ],
+        )
+        passed_map = {test.name: test.passed for test in result.tests}
+        self.assertTrue(passed_map["TPSample.Error.Accumulator.Add"])
+        self.assertTrue(passed_map["TPSample.Error.Accumulator.Dedupe"])
+        self.assertFalse(passed_map["TPSample.Error.Accumulator.DedupesBroadcast"])
+        self.assertTrue(passed_map["TPSample.Error.Accumulator.FlushClearsQueue"])
+        self.assertFalse(passed_map["TPSample.Error.Accumulator.RecordsErrors"])
+
     def test_missing_report_does_not_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             result = automation_report.parse_automation_report(Path(tmp))

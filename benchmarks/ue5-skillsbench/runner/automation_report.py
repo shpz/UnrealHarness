@@ -167,7 +167,30 @@ def _parse_editor_log(log_path: Path) -> AutomationReportResult:
     tests: list[AutomationTestResult] = []
     passed_re = re.compile(r"LogAutomationController:\s+(.+?)\s+passed\s*\(", re.IGNORECASE)
     failed_re = re.compile(r"LogAutomationController:\s+(.+?)\s+failed", re.IGNORECASE)
+    # UE outputs localized "Test Completed" lines when native report export is not
+    # configured. Match both Chinese (成功/失败) and English (Success/Failed) results
+    # and use the full Path= value as the test name.
+    completed_re = re.compile(
+        r"LogAutomationController:\s+(?:Display|Error):\s+Test Completed\.\s+"
+        r"Result=\{(?P<result>[^}]+)\}\s+"
+        r"(?:Name=\{(?P<name>[^}]*)\}\s+)?"
+        r"Path=\{(?P<path>[^}]+)\}",
+        re.IGNORECASE,
+    )
+    _PASS_RESULTS = {"成功", "success", "passed", "pass"}
+    _FAIL_RESULTS = {"失败", "failed", "failure", "fail", "error"}
     for line in lines:
+        completed = completed_re.search(line)
+        if completed:
+            result_value = completed.group("result").strip().lower()
+            name = completed.group("path").strip()
+            if name and result_value in _PASS_RESULTS:
+                tests.append(AutomationTestResult(name=name, passed=True))
+                continue
+            if name and result_value in _FAIL_RESULTS:
+                tests.append(AutomationTestResult(name=name, passed=False))
+                continue
+
         passed = passed_re.search(line)
         if passed:
             tests.append(AutomationTestResult(name=passed.group(1).strip(), passed=True))
