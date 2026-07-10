@@ -127,7 +127,7 @@ def cmd_run_single(args: argparse.Namespace) -> int:
     elif adapter_name == "kimi-code":
         adapter = KimiCodeAdapter()
     elif adapter_name == "codex":
-        adapter = CodexAdapter()
+        adapter = CodexAdapter(model=getattr(args, "model", None))
     else:
         print(f"Unknown adapter: {adapter_name}", file=sys.stderr)
         return 1
@@ -271,6 +271,7 @@ def main() -> int:
     p.add_argument("--task-id", required=True)
     p.add_argument("--condition", required=True)
     p.add_argument("--adapter", choices=["oracle", "manual", "noop", "codex", "kimi-code"], required=True)
+    p.add_argument("--model", default=None, help="Model override for the codex adapter (passed as codex exec -m)")
     p.add_argument("--trial", type=int, default=1)
     p.add_argument("--run-id", default=None)
     p.add_argument("--skip-preflight", action="store_true")

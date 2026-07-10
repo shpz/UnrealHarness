@@ -22,6 +22,25 @@ class AdapterResult:
     skills_usage: Optional[dict] = None
 
 
+def build_prompt(instruction_path: Path, skills_root: Optional[Path]) -> str:
+    """Compose the agent prompt from the task instruction and injected skills.
+
+    Each skill section carries its on-disk root path so agents can invoke
+    bundled scripts (e.g. status.py) instead of only reading SKILL.md text.
+    """
+    prompt_parts = [instruction_path.read_text(encoding="utf-8")]
+    if skills_root and skills_root.exists():
+        prompt_parts.append("\n\n## Available Skills\n")
+        for skill_dir in sorted(skills_root.iterdir()):
+            if skill_dir.is_dir():
+                skill_md = skill_dir / "SKILL.md"
+                if skill_md.exists():
+                    prompt_parts.append(f"\n### {skill_dir.name}\n")
+                    prompt_parts.append(f"\nSkill root (scripts referenced below live here): `{skill_dir.resolve()}`\n")
+                    prompt_parts.append(skill_md.read_text(encoding="utf-8"))
+    return "\n".join(prompt_parts)
+
+
 class Adapter(ABC):
     @abstractmethod
     def run(
@@ -115,6 +134,9 @@ class ManualAdapter(Adapter):
 
 
 class CodexAdapter(Adapter):
+    def __init__(self, model: Optional[str] = None):
+        self.model = model
+
     def _find_codex_js(self) -> Path:
         candidates = [
             Path(os.environ.get("APPDATA", "")) / "npm" / "node_modules" / "@openai" / "codex" / "bin" / "codex.js",
@@ -148,16 +170,7 @@ class CodexAdapter(Adapter):
         codex_js = self._find_codex_js()
         project_path = workspace_root / "TPSample"
 
-        prompt_parts = [instruction_path.read_text(encoding="utf-8")]
-        if skills_root and skills_root.exists():
-            prompt_parts.append("\n\n## Available Skills\n")
-            for skill_dir in sorted(skills_root.iterdir()):
-                if skill_dir.is_dir():
-                    skill_md = skill_dir / "SKILL.md"
-                    if skill_md.exists():
-                        prompt_parts.append(f"\n### {skill_dir.name}\n")
-                        prompt_parts.append(skill_md.read_text(encoding="utf-8"))
-        prompt = "\n".join(prompt_parts)
+        prompt = build_prompt(instruction_path, skills_root)
 
         prompt_path = artifacts_dir / "agent.prompt.md"
         prompt_path.write_text(prompt, encoding="utf-8")
@@ -177,6 +190,8 @@ class CodexAdapter(Adapter):
             "--ephemeral",
             "--skip-git-repo-check",
         ]
+        if self.model:
+            cmd.extend(["-m", self.model])
 
         adapter_sw = time.perf_counter()
         try:
@@ -281,17 +296,7 @@ class KimiCodeAdapter(Adapter):
         kimi = self._find_kimi()
         project_path = workspace_root / "TPSample"
 
-        # Build prompt from instruction + skills context
-        prompt_parts = [instruction_path.read_text(encoding="utf-8")]
-        if skills_root and skills_root.exists():
-            prompt_parts.append("\n\n## Available Skills\n")
-            for skill_dir in sorted(skills_root.iterdir()):
-                if skill_dir.is_dir():
-                    skill_md = skill_dir / "SKILL.md"
-                    if skill_md.exists():
-                        prompt_parts.append(f"\n### {skill_dir.name}\n")
-                        prompt_parts.append(skill_md.read_text(encoding="utf-8"))
-        prompt = "\n".join(prompt_parts)
+        prompt = build_prompt(instruction_path, skills_root)
 
         # Write prompt to file for reference
         prompt_path = artifacts_dir / "agent.prompt.md"
