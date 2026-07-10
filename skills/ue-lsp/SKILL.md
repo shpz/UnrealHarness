@@ -1,198 +1,129 @@
 ---
 name: ue-lsp
 description: >
-  当 agent 编写、审查或调试 Unreal Engine 5 C++，并且需要通过 clangd/LSP
-  查询符号、类型、定义、引用、diagnostics、completion、signature help、workspace symbol、
-  document symbols 或 code actions 时使用。触发词包括 UE5 LSP、clangd、compile_commands.json、
-  GenerateClangDatabase、Unreal C++ API 查询、GENERATED_BODY diagnostics、.generated.h 问题，
-  或任何需要确认 UE C++ 调用是否合法的场景。此 skill 只准备并查询 C++ language-server
-  上下文；不解析 UHT，不分析 Blueprint 资产图，不自动应用重构，也不把 clangd diagnostics
-  当作最终 UBT/UHT build 结论。
+  当 agent 需要在 Unreal Engine 5 C++ 项目中使用 LSP（clangd）查询符号、定义、引用、
+  diagnostics 时使用。此 skill 的核心职责是：确保 compile_commands.json 正确生成，
+  让宿主 agent 的内置 LSP 工具在 UE 项目上真正可用；并识别 clangd fallback 模式下的
+  虚假结果，防止 agent 被误导去"修复"正确的代码。触发词包括 UE5 LSP、clangd、
+  compile_commands.json、GenerateClangDatabase、GENERATED_BODY 报错、.generated.h 问题、
+  CoreMinimal.h file not found，或任何需要用 LSP 确认 UE C++ 代码的场景。
+  此 skill 不解析 UHT，不分析 Blueprint 资产，不把 clangd diagnostics 当作最终 UBT 编译结论。
 ---
 
 # UE5 LSP Skill
 
-## 用途
+## 核心问题
 
-使用 clangd 和宿主编辑器/agent 暴露的 LSP 工具，在当前 UE5 项目的真实编译上下文中回答 C++ 局部事实：符号在哪里定义、当前位置的类型或 overload 是什么、有哪些 references，以及当前文件是否有 C++ diagnostics。
+宿主 agent（Claude Code、OpenCode 等）内置的 LSP 工具依赖 clangd，而 clangd 依赖
+`compile_commands.json`。UE 项目默认没有这个文件。**没有它时 clangd 不会报错退出，
+而是进入 fallback 模式，返回大量看似真实、实际错误的结果。**
 
-核心链路是：
+实测 fallback 模式的表现（正确的 UE 代码上）：
 
-```text
-.uproject + Engine + Target/Platform/Config
-        -> UBT GenerateClangDatabase
-        -> compile_commands.json
-        -> clangd
-        -> LSP query
-        -> 带 confidence 和 caveats 的 agent-readable result
-```
+- diagnostics 报出几十条 error：`'CoreMinimal.h' file not found`、`Unknown type name 'UCLASS'`、`GENERATED_BODY` 附近语法错误，直到 `too_many_errors` 截断。**这些全是环境问题，不是代码错误。**
+- references 静默丢失跨文件结果（只返回当前文件内的命中，.cpp 中的引用全部丢失，且无任何"结果不完整"提示）。
+- workspace symbol 查不到任何引擎符号（`ACharacter` 等 UE API 完全不可见）。
+- document symbols 大纲能列出，但语义错误（`UPROPERTY` 被当作 Method）。
 
-此 skill 不替代 `ue-build`。它用于判断 clangd 在修改前后能证明什么；当用户要求编译，或必须确认 UBT/UHT 真实结论时，仍然运行 `ue-build`。
+因此本 skill 的两条铁律：
 
-## 第一步：检查状态
+1. **任何 LSP 查询前，先确认 compile_commands.json 存在且新鲜。** 不满足就先走"生成编译数据库"流程。
+2. **看到 fallback 症状时，立即停止信任 LSP 结果。** 绝不根据 fallback diagnostics 修改代码。
 
-信任任何 UE C++ LSP 结果之前，先从 skill root 运行状态脚本：
+## 第一步：状态检查
+
+从 skill root 运行：
 
 ```powershell
 python "<skill-root>/status.py" --project "<Project.uproject>" --source-file "<File.cpp>"
 ```
 
-把输出视为 `ue_lsp_status`：
+输出 JSON 包含 `health`（ok | degraded | broken | invalid）、`caveats`、`next_actions`
+和现成的 `generate_compile_commands_command`。
 
-```text
-project_root
-uproject_path
-project_name
-engine_root
-target
-platform
-configuration
-clangd_path
-compile_commands_path
-compile_commands_mtime
-clangd_running
-index_state: unknown
-health: ok | degraded | broken
-caveats
-next_actions
-generate_compile_commands_command
-```
+- `health: ok` → 可以使用宿主内置 LSP 工具，按下文规则解读结果。
+- `health: degraded` → 按 `caveats` 处理（如 compdb 在 engine root 而非项目根、clangd 不在 PATH）。
+- `health: broken` → compile_commands.json 缺失。先走生成流程，不要先查询。
+- `health: invalid` → 项目定位失败，按 `caveats` 修正参数。
 
-如果 `health` 是 `broken`，或者当前查询只能给出 `confidence: invalid`，不要把 LSP 结果描述成确定事实。先说明缺失前提，再只带 caveats 使用 fallback search。
+## 第二步：生成 compile_commands.json
 
-## 编译数据库流程
-
-clangd 需要 `compile_commands.json`。如果它缺失或可能过期，先准备 dry-run 命令，并向用户展示 project、target、platform、configuration、engine path 和预期输出位置；不要自动运行 UBT。
-
-典型 Windows 命令形态：
+`status.py` 输出的 `generate_compile_commands_command` 已根据实际引擎安装选好了
+UBT 调用形态。生成前向用户展示命令和预期输出位置，得到同意后执行。典型形态：
 
 ```powershell
 & "<EngineRoot>\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" -mode=GenerateClangDatabase -project="<Project.uproject>" -game -engine <Target> <Configuration> <Platform>
 ```
 
-部分 UE 安装需要通过 `Engine\Build\BatchFiles\Build.bat` 调用，UE5 也常见 `dotnet "<EngineRoot>\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll"` 形态。某些版本会把 `compile_commands.json` 写到 Engine root 而不是 project root。生成后必须重新检测实际输出路径；优先使用 `--compile-commands-dir=<dir>` 或在用户明确同意后写入最小 `.clangd`，不要静默复制或创建 symlink。
+注意事项：
 
-用户明确要求创建 `.clangd` 时，最小方向是：
+- 部分 UE 版本把 `compile_commands.json` 写到 **Engine root 而不是 project root**。生成后重新运行 `status.py` 确认实际位置。
+- 如果输出不在项目根，优先在项目根写一个最小 `.clangd` 指向它（需用户同意），不要复制或建 symlink：
 
 ```yaml
 CompileFlags:
-  CompilationDatabase: ./
+  CompilationDatabase: <compile_commands.json 所在目录>
 Index:
   Background: Build
 ```
 
-## 查询流程
+- 生成后 clangd 需要重启才会读取新数据库；宿主 LSP 客户端可能缓存旧会话，必要时提示用户重启 LSP 或 agent 会话。
+- 首次查询后 background index 需要时间构建，references 结果在此期间可能不完整。
 
-clangd 可用时，使用宿主 agent 暴露的通用 LSP 工具。在 OpenCode 中，优先使用内置 LSP 工具查询 diagnostics、definition、references 和 symbols。对于 hover、completion、signature help 或 code actions，如果当前 harness 暴露对应 LSP/MCP 工具就使用；否则明确说明宿主没有暴露该 LSP 方法，并 fallback 到最接近的可用查询。
+## 第三步：使用宿主内置 LSP
 
-LSP position 使用 0-based 行列；从编辑器显示的 1-based 行列转换时要谨慎，并尊重客户端暴露的 position encoding。
+数据库就绪后，直接使用宿主 agent 暴露的 LSP 工具（diagnostics、definition、
+references、symbols 等）。不要自己起 clangd 进程与宿主竞争。
 
-每次查询都必须整理成 agent-readable 形式：
+高效用法：
 
-```text
-query: hover | definition | references | workspace symbol | document symbols | completion | signature help | diagnostics | code actions
-result: <agent-readable fact or empty result>
-location: <file:line:column when available>
-confidence: high | medium | low | invalid
-caveats:
-  - compile database stale or missing
-  - generated header stale or missing
-  - index incomplete
-  - header compile command inferred
-  - UHT/reflection semantics involved
-next_actions:
-  - read_definition
-  - find_references
-  - refresh_compile_database
-  - refresh_generated_headers
-  - search_source
-  - check_docs
-```
+- 不确定 UE API 时，先 workspace symbol 搜候选，再 definition/hover 确认，不要猜引擎路径。
+- 编辑大文件前，先 document symbols 建立文件地图。
+- 修改后立即对改动文件跑 diagnostics。
+- LSP position 是 0-based 行列，从编辑器 1-based 转换时要小心。
 
-### `ue_lsp_diagnostics`
+## 结果解读规则
 
-通过 clangd 打开当前文件后读取 diagnostics。include/macro 爆炸、standard library 缺失、`.generated.h` 缺失，以及 `GENERATED_BODY` 附近错误，应先分类为配置问题或 UHT/generated-header 风险；除非 UBT 也确认同样失败，不要直接当作业务代码错误。
+### fallback 症状识别（最高优先级）
 
-### `ue_lsp_hover`
+查询结果出现以下任一特征时，判定 clangd 处于 fallback 或配置损坏状态：
 
-在具体 file position 查询类型、签名、宏信息或文档。只有当前文件使用真实 compile command 成功解析时，hover 才能作为较高可信度事实。
+- diagnostics 第一条是标准头文件或 `CoreMinimal.h` 找不到
+- `UCLASS` / `UPROPERTY` / `UFUNCTION` / `GENERATED_BODY` 被报 `Unknown type name`
+- 错误数量爆炸直至 `too_many_errors`
 
-### `ue_lsp_definition`
+此时：停止信任本轮所有 LSP 结果，运行 `status.py` 诊断，走生成/修复流程。
+**绝不根据这些 diagnostics 修改业务代码。**
 
-确认当前位置绑定到哪个声明或实现。报告目标位于 project code、Engine code、plugin code 还是 generated code。
+### UHT 与 generated header
 
-### `ue_lsp_references`
+涉及 `UCLASS`、`USTRUCT`、`UPROPERTY`、`UFUNCTION`、`GENERATED_BODY`、`.generated.h`
+的 diagnostics，即使 compdb 健康也要加 UHT caveat：generated header 可能过期或缺失。
+根因确认交给 UBT/UHT（运行 `ue-build`），不要只根据 clangd 修改 reflection 相关代码。
 
-查询项目/Engine 中的使用点。clangd background index 仍在构建时，必须 caveat references 可能不完整。
+### 可信度分级
 
-### `ue_lsp_workspace_symbol`
+对外报告 LSP 结论时标注 confidence：
 
-不确定 UE API 路径时，先用 workspace symbol 搜索候选，不要猜 Engine 路径。如果 LSP miss 但静态搜索找到文本，标记 low confidence，并 caveat target/module/index 可能不可见。
+- **high**：compdb 健康 + 当前文件用真实 compile command 解析成功 + 精确符号命中。
+- **medium**：有结果但 index 可能未建完、header 的 compile command 是推断的、或 generated header 新鲜度不确定。
+- **low**：LSP 无结果只能靠文本搜索，或出现局部 include 失败。
+- **invalid**：无 compdb / clangd 未启动 / fallback 症状。此级别的结果不得作为修改代码的依据。
 
-### `ue_lsp_document_symbols`
+references 在 background index 构建期间必须 caveat "可能不完整"；
+workspace symbol 查不到但文本搜索能找到时，标记 low 并说明符号可能不在当前 target/module/index 中。
 
-编辑或审查大型 UE C++ 文件前，先用 document symbols 映射当前文件中的 class、function、field 和 method。
+## 与 ue-build 的分工
 
-### `ue_lsp_completion`
-
-查询当前位置可用成员、overload 候选，以及可能的 include/code-action 提示。UE macro completion 缺失不是符号不存在的证据。
-
-### `ue_lsp_signature_help`
-
-在函数调用位置确认当前参数序号和 overload 列表，尤其适合修改 UE API 调用前使用。
-
-### `ue_lsp_code_actions`
-
-只列出 code actions 或 quick fixes，尤其是 include fixes。除非用户明确要求且风险低，不要自动应用。
-
-## 可信度规则
-
-confidence: high
-
-仅当 clangd 使用真实 compile command 解析当前文件、diagnostics 健康、且 LSP 返回精确符号结果时使用。
-
-confidence: medium
-
-当 LSP 返回结果，但 index 可能未完成、header compile command 是推断的、generated header 新鲜度不确定，或 diagnostics 有有限配置 caveats 时使用。
-
-confidence: low
-
-当 LSP 没有返回结果，只能依赖静态搜索；或 clangd 可能使用 fallback context；或 diagnostics 出现大面积 include/macro 失败时使用。
-
-confidence: invalid
-
-当没有 compile database、clangd 无法启动，或当前文件无法建立 AST 时使用。
-
-## UHT 和 generated header 规则
-
-不要自己解析 UHT。当问题涉及 `UCLASS`、`USTRUCT`、`UENUM`、`UINTERFACE`、`UPROPERTY`、`UFUNCTION`、`GENERATED_BODY`、`.generated.h`、Blueprint exposure、replication specifier 或 reflection metadata 时，必须添加 UHT caveat，并用 UBT/UHT 输出或官方文档确认。
-
-缺失 `.generated.h` 或 `GENERATED_BODY` 附近 diagnostics 通常意味着 generated headers 缺失/过期，或者 compile database target 不对。不要只根据 clangd 诊断就重写业务代码；先通过真实 UBT/UHT 检查确认根因。
+clangd 说"没问题"不等于 UBT 能编过；clangd 说"有问题"也不等于代码真的错了。
+需要权威结论（提交前验证、修复 UHT 问题、用户要求编译）时，运行 `ue-build`。
+本 skill 负责的是编译之间的快速、局部、带置信度的事实查询。
 
 ## fallback 策略
 
-当 LSP 不可用或可信度低时：
+LSP 不可用或 confidence 为 low/invalid 时：
 
-1. 对 project 和 Engine source 做文本搜索，寻找候选符号。
-2. 只有在展示命令并得到用户同意后，才刷新或生成 `compile_commands.json`。
-3. reflection markers 相关问题通过显式 UBT/UHT 或 `ue-build` 刷新 generated headers。
-4. 涉及 API 或工具链行为时，查官方 Unreal 或 clangd 文档。
-5. 把结果报告为 hypothesis，不要包装成已由 C++ LSP 证明的事实。
-
-## 示例流程
-
-### 不确定 UE API 调用
-
-运行 `ue_lsp_status`，用 `ue_lsp_workspace_symbol` 搜索候选 API，用 `ue_lsp_definition` 和 `ue_lsp_hover` 确认选中的 overload，在 callsite 用 `ue_lsp_signature_help` 检查参数，修改后读取 diagnostics。
-
-### 审查 override 或函数调用
-
-先用 document symbols 确认 clangd 能看见 class 和 method，再对可疑调用或 override 使用 hover 和 definition，用 references 查项目内相似用法，最后带 confidence 和 caveats 报告 diagnostics。
-
-### generated header 问题
-
-如果 diagnostics 涉及 `.generated.h`、`GENERATED_BODY` 或 UHT macros，即使 clangd 返回 C++ diagnostic，也要标记 medium/low confidence。只有用户同意时才请求或运行 UBT/UHT refresh；不要只根据 clangd 改 reflection specifiers。
-
-### LSP miss 但源码命中
-
-如果 workspace symbol 找不到，但静态搜索找到文本，说明该符号可能不在当前 target、module 或 clangd index 中。此时只能把直接文件读取或文档作为辅助证据。
+1. 对 project 和 Engine source 做文本搜索，结果报告为 hypothesis 而非 LSP 证明的事实。
+2. 生成/刷新 compile_commands.json（展示命令并获同意后）。
+3. reflection 相关问题用 `ue-build` 刷新 generated headers。
+4. API 或工具链行为查官方 Unreal / clangd 文档。

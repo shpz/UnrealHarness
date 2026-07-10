@@ -38,6 +38,7 @@ def new_status_result(platform: str, configuration: str) -> dict[str, object]:
         "configuration": configuration,
         "clangd_path": None,
         "compile_commands_path": None,
+        "compile_commands_location": None,
         "compile_commands_mtime": None,
         "clangd_running": False,
         "index_state": "unknown",
@@ -170,11 +171,18 @@ def is_clangd_running() -> bool:
     return "clangd.exe" in result.stdout.lower()
 
 
-def find_compile_commands(project_root: Path) -> Path | None:
+def find_compile_commands(project_root: Path, engine_root: Path | None) -> tuple[Path | None, str | None]:
+    """Return (path, location) where location is 'project_root' or 'engine_root'."""
     candidate = project_root / "compile_commands.json"
     if candidate.exists():
-        return candidate.resolve()
-    return None
+        return candidate.resolve(), "project_root"
+
+    if engine_root is not None:
+        engine_candidate = engine_root / "compile_commands.json"
+        if engine_candidate.exists():
+            return engine_candidate.resolve(), "engine_root"
+
+    return None, None
 
 
 def get_generated_header_caveats(file_path: str) -> list[str]:
@@ -317,7 +325,7 @@ def main() -> int:
 
         engine_root = resolve_engine_path(project_file, args.engine_root)
         clangd_path = find_clangd()
-        compile_commands_path = find_compile_commands(project_root)
+        compile_commands_path, compile_commands_location = find_compile_commands(project_root, engine_root)
         caveats: list[str] = []
         next_actions: list[str] = []
 
@@ -332,6 +340,12 @@ def main() -> int:
         if compile_commands_path is None:
             caveats.append("compile_commands.json is missing from project root")
             next_actions.append("generate_compile_database")
+        elif compile_commands_location == "engine_root":
+            caveats.append(
+                "compile_commands.json was found in engine root, not project root; "
+                + "clangd will not pick it up for project files without a .clangd pointing at it"
+            )
+            next_actions.append("create_clangd_config_pointing_to_engine_root")
 
         for caveat in get_generated_header_caveats(args.source_file):
             caveats.append(caveat)
@@ -340,7 +354,7 @@ def main() -> int:
         health = "ok"
         if compile_commands_path is None:
             health = "broken"
-        elif engine_root is None or clangd_path is None:
+        elif compile_commands_location == "engine_root" or engine_root is None or clangd_path is None:
             health = "degraded"
 
         result.update(
@@ -352,6 +366,7 @@ def main() -> int:
                 "target": target,
                 "clangd_path": clangd_path,
                 "compile_commands_path": resolve_path(compile_commands_path) if compile_commands_path else None,
+                "compile_commands_location": compile_commands_location,
                 "compile_commands_mtime": format_mtime(compile_commands_path) if compile_commands_path else None,
                 "clangd_running": is_clangd_running(),
                 "health": health,
