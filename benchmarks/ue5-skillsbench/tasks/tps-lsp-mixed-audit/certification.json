@@ -1,0 +1,44 @@
+{
+    "certified_at": "2026-07-10T00:36:36+0800",
+    "engine_association": "5.7",
+    "engine_root": "C:\\Program Files\\Epic Games\\UE_5.7",
+    "line_tolerance": 3,
+    "fixture_sha256": {
+        "BenchScoreTracker.h": "5e72e002a331c6ea2b977d998f2257098de374eab350523eced6e7154983a707",
+        "BenchScoreTracker.cpp": "326fc91c5dac20329fba49f4283125acad4cf87c12d3b478bdac779cc370e210",
+        "BenchSignalRelay.h": "3c9fee2b2e0dd202631877f82c3a8536bd7df079b57fa51103a97cf57f7965d9",
+        "BenchSignalRelay.cpp": "4e27370787f37d5a9f945eb0e08f0b52fe8153f403e797065efc9b37e4fe1e05",
+        "BenchAimSolver.h": "e3787f5cec3b54d998437b801cf4e5c9ad020bf1850491c7d8a812b3180b979d",
+        "BenchAimSolver.cpp": "4a6a6dd4b13e5395d28af7afb25ecb9874be589406a2eda73213bdd196f063dc",
+        "BenchPatrolRoute.h": "c7add1879438e86af6b2c72e18ffa928bb648dd3a90bd956ea30aff24383eb38",
+        "BenchPatrolRoute.cpp": "b6f755b6c01f05a633d8ac80700f8f162d1fb14723195b58c3768de857fccfeb",
+        "BenchWaveDirector.h": "043dfab6fd70cc33dfecd1148fdb581cc906dbd3f8815e8c56a75b0d376beb54",
+        "BenchWaveDirector.cpp": "05c23756ecb2451a15b63e0aed6fbda5c45156bb0e19334ceba519cd77c61059"
+    },
+    "answer_key_sha256": "8bc821cbf16a76f1c983118a4d3d29b188b419991804d010a633f585ea3db39b",
+    "steps": {
+        "step1_correct_fixtures_build": {
+            "exit_code": 0,
+            "duration_seconds": 34.772
+        },
+        "step2_BenchAimSolver": {
+            "matched_error": {
+                "file": "BenchAimSolver.cpp",
+                "line": 11,
+                "code": "C2664",
+                "text": "\u201cT UE::Math::TVector<T>::DotProduct(const UE::Math::TVector<T> &,const UE::Math::TVector<T> &)\u201d: \u65e0\u6cd5\u5c06\u53c2\u6570 2 \u4ece\u201cFRotator\u201d\u8f6c\u6362\u4e3a\u201cconst UE::Math::TVector<double> &\u201d"
+            }
+        },
+        "step2_BenchPatrolRoute": {
+            "matched_error": {
+                "file": "BenchPatrolRoute.cpp",
+                "line": 13,
+                "code": "C2039",
+                "text": "\"MaxWalkSpeedCrouching\": \u4e0d\u662f \"UCharacterMovementComponent\" \u7684\u6210\u5458"
+            }
+        },
+        "step3_combined": {
+            "errors_found": 2
+        }
+    }
+}

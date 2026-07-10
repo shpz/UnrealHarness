@@ -1,0 +1,10 @@
+id = "tps-lsp-mixed-audit"
+project = "TPSample"
+timeout_minutes = 30
+primary_skills = ["ue-lsp"]
+
+[metadata]
+difficulty = "hard"
+category = "software-engineering"
+subcategory = "lsp-diagnostics"
+tags = ["unreal-engine", "ue5", "lsp", "clangd", "compile-commands", "mixed-audit", "certified-ground-truth"]

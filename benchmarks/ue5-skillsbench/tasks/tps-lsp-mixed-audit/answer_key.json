@@ -1,0 +1,33 @@
+{
+    "module_relative_dir": "Source/TPSample/Bench",
+    "files": {
+        "BenchScoreTracker": {
+            "role": "A-plain-correct",
+            "has_code_errors": false
+        },
+        "BenchSignalRelay": {
+            "role": "B-suspicious-correct",
+            "has_code_errors": false
+        },
+        "BenchAimSolver": {
+            "role": "C-type-mismatch",
+            "has_code_errors": true,
+            "error_file": "BenchAimSolver.cpp",
+            "error_line": 11,
+            "error_symbol": "DotProduct",
+            "error_note": "FVector::DotProduct is called with an FRotator (Target->GetActorRotation()); no implicit FRotator->FVector conversion exists"
+        },
+        "BenchPatrolRoute": {
+            "role": "D-missing-member",
+            "has_code_errors": true,
+            "error_file": "BenchPatrolRoute.cpp",
+            "error_line": 13,
+            "error_symbol": "MaxWalkSpeedCrouching",
+            "error_note": "UCharacterMovementComponent has no member MaxWalkSpeedCrouching; the real member is MaxWalkSpeedCrouched"
+        },
+        "BenchWaveDirector": {
+            "role": "E-macro-heavy-correct",
+            "has_code_errors": false
+        }
+    }
+}

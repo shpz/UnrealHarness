@@ -9,6 +9,8 @@ project:
 skills:
   ue-build:
     path: skills/ue-build
+  ue-lsp:
+    path: skills/ue-lsp
 
 conditions:
   - id: no-skills
@@ -16,6 +18,9 @@ conditions:
   - id: ue-build-only
     skills:
       - ue-build
+  - id: ue-lsp-only
+    skills:
+      - ue-lsp
 
 runner:
   runRoot: D:\br
