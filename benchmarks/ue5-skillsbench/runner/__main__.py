@@ -10,6 +10,7 @@ from pathlib import Path
 from .adapter import CodexAdapter, KimiCodeAdapter, ManualAdapter, NoopAdapter, OracleAdapter
 from .config import BenchmarkConfig, ConditionConfig, discover_tasks, load_benchmark_yaml
 from .metrics import capture_filtered_git_diff, capture_git_diff, diff_metrics, git_add_untracked
+from .lsp_telemetry import summarize_lsp_trace
 from .preflight import run_preflight
 from .report import make_report
 from .unreal import invoke_build
@@ -28,6 +29,33 @@ def _benchmark_root() -> Path:
 
 def _run_id_now() -> str:
     return time.strftime("%Y%m%d-%H%M%S")
+
+
+def _stop_trial_managed_lsp(repo_root: Path, project_path: Path, artifacts_path: Path) -> None:
+    """Best-effort cleanup of this trial's authenticated project-local server."""
+    if not (project_path / ".ue-lsp" / "server.json").exists():
+        return
+    query_script = repo_root / "skills" / "ue-lsp" / "query.py"
+    if not query_script.exists():
+        return
+    import os
+    import subprocess
+
+    env = os.environ.copy()
+    env["UE_LSP_TRACE_PATH"] = str((artifacts_path / "lsp-query-trace.jsonl").resolve())
+    env["UE_LSP_PROJECT_PATH"] = str(project_path.resolve())
+    try:
+        subprocess.run(
+            [sys.executable, str(query_script), "stop", "--project", str(project_path)],
+            cwd=str(project_path),
+            env=env,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
 
 
 def cmd_preflight(args: argparse.Namespace) -> int:
@@ -140,6 +168,7 @@ def cmd_run_single(args: argparse.Namespace) -> int:
         timeout_minutes=args.timeout_minutes,
         task_dir=task_dir,
     )
+    _stop_trial_managed_lsp(repo_root, project_path, artifacts_path)
 
     # Git diff
     git_add_untracked(project_path)
@@ -171,6 +200,9 @@ def cmd_run_single(args: argparse.Namespace) -> int:
     elif not (verifier_result["verifier_result"] or {}).get("passed", False):
         failure_class = (verifier_result["verifier_result"] or {}).get("failure_class", "verifier-fail")
 
+    lsp_trace_path = artifacts_path / "lsp-query-trace.jsonl"
+    lsp_summary = summarize_lsp_trace(lsp_trace_path)
+
     result = {
         "run_id": run_id,
         "task_id": args.task_id,
@@ -198,10 +230,12 @@ def cmd_run_single(args: argparse.Namespace) -> int:
             "lines_added": diff_metrics_result["lines_added"],
             "lines_deleted": diff_metrics_result["lines_deleted"],
         },
+        "lsp": lsp_summary,
         "artifacts": {
             "workspace": str(project_path),
             "diff": str(diff_path),
             "verifier_result": str(artifacts_path / "verifier_result.json"),
+            "lsp_query_trace": str(lsp_trace_path),
         },
     }
 

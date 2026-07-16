@@ -22,6 +22,14 @@ class AdapterResult:
     skills_usage: Optional[dict] = None
 
 
+def agent_environment(project_path: Path, artifacts_dir: Path) -> dict[str, str]:
+    """Return a child-only environment with ue-lsp telemetry routing."""
+    env = os.environ.copy()
+    env["UE_LSP_TRACE_PATH"] = str((artifacts_dir / "lsp-query-trace.jsonl").resolve())
+    env["UE_LSP_PROJECT_PATH"] = str(project_path.resolve())
+    return env
+
+
 def build_prompt(instruction_path: Path, skills_root: Optional[Path]) -> str:
     """Compose the agent prompt from the task instruction and injected skills.
 
@@ -203,6 +211,7 @@ class CodexAdapter(Adapter):
                 encoding="utf-8",
                 errors="replace",
                 timeout=timeout_minutes * 60,
+                env=agent_environment(project_path, artifacts_dir),
             )
             elapsed = time.perf_counter() - adapter_sw
             timed_out = False
@@ -321,6 +330,7 @@ class KimiCodeAdapter(Adapter):
                 capture_output=True,
                 timeout=timeout_minutes * 60,
                 cwd=str(project_path),
+                env=agent_environment(project_path, artifacts_dir),
             )
             elapsed = time.perf_counter() - adapter_sw
             timed_out = False

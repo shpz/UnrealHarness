@@ -92,3 +92,4 @@ Plugins/*/Intermediate/*
 Tools/**/dist/*
 
 .cache
+.ue-lsp

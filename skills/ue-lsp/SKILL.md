@@ -1,129 +1,150 @@
 ---
 name: ue-lsp
 description: >
-  当 agent 需要在 Unreal Engine 5 C++ 项目中使用 LSP（clangd）查询符号、定义、引用、
-  diagnostics 时使用。此 skill 的核心职责是：确保 compile_commands.json 正确生成，
-  让宿主 agent 的内置 LSP 工具在 UE 项目上真正可用；并识别 clangd fallback 模式下的
-  虚假结果，防止 agent 被误导去"修复"正确的代码。触发词包括 UE5 LSP、clangd、
-  compile_commands.json、GenerateClangDatabase、GENERATED_BODY 报错、.generated.h 问题、
-  CoreMinimal.h file not found，或任何需要用 LSP 确认 UE C++ 代码的场景。
-  此 skill 不解析 UHT，不分析 Blueprint 资产，不把 clangd diagnostics 当作最终 UBT 编译结论。
+  在 Unreal Engine 5 C++ 项目中检查 clangd 前置条件，并执行 definition、hover、
+  references、implementation 和安全的 rename preview。适用于 UE5 LSP、clangd、
+  compile_commands.json、GenerateClangDatabase、GENERATED_BODY、.generated.h、
+  CoreMinimal.h not found、符号跳转、引用影响和语义重命名场景。本 skill 不解析
+  Blueprint 资产，不把 clangd diagnostics 当作最终 UBT/UHT 编译结论。
 ---
 
 # UE5 LSP Skill
 
-## 核心问题
+## 使用原则
 
-宿主 agent（Claude Code、OpenCode 等）内置的 LSP 工具依赖 clangd，而 clangd 依赖
-`compile_commands.json`。UE 项目默认没有这个文件。**没有它时 clangd 不会报错退出，
-而是进入 fallback 模式，返回大量看似真实、实际错误的结果。**
+1. 每次语义查询前先运行 `status.py` 或 `query.py status`。
+2. `compile_commands.json` 必须位于当前项目根；Engine root 中的遗留文件只作为 external/legacy state 报告，绝不读取、覆盖或删除。
+3. 宿主原生 LSP 明确可用且调用结果可观测时，优先使用宿主工具。
+4. 宿主没有 definition/references/implementation/hover/rename 能力，或无法观察实际调用时，使用本 skill 的 `query.py` managed clangd。
+5. managed clangd 只属于当前 ProjectRoot，不终止或修改 IDE、宿主 agent、其他项目的 clangd。
+6. fallback diagnostics 不能作为修改 UE 业务源码的依据；权威构建结论仍由 UBT/UHT 提供。
 
-实测 fallback 模式的表现（正确的 UE 代码上）：
-
-- diagnostics 报出几十条 error：`'CoreMinimal.h' file not found`、`Unknown type name 'UCLASS'`、`GENERATED_BODY` 附近语法错误，直到 `too_many_errors` 截断。**这些全是环境问题，不是代码错误。**
-- references 静默丢失跨文件结果（只返回当前文件内的命中，.cpp 中的引用全部丢失，且无任何"结果不完整"提示）。
-- workspace symbol 查不到任何引擎符号（`ACharacter` 等 UE API 完全不可见）。
-- document symbols 大纲能列出，但语义错误（`UPROPERTY` 被当作 Method）。
-
-因此本 skill 的两条铁律：
-
-1. **任何 LSP 查询前，先确认 compile_commands.json 存在且新鲜。** 不满足就先走"生成编译数据库"流程。
-2. **看到 fallback 症状时，立即停止信任 LSP 结果。** 绝不根据 fallback diagnostics 修改代码。
-
-## 第一步：状态检查
-
-从 skill root 运行：
+## 状态检查与 workspace-local compdb
 
 ```powershell
-python "<skill-root>/status.py" --project "<Project.uproject>" --source-file "<File.cpp>"
+python "<skill-root>/status.py" `
+  --project "D:\work\TPSample\TPSample.uproject" `
+  --source-file "Source\TPSample\Foo.cpp"
 ```
 
-输出 JSON 包含 `health`（ok | degraded | broken | invalid）、`caveats`、`next_actions`
-和现成的 `generate_compile_commands_command`。
-
-- `health: ok` → 可以使用宿主内置 LSP 工具，按下文规则解读结果。
-- `health: degraded` → 按 `caveats` 处理（如 compdb 在 engine root 而非项目根、clangd 不在 PATH）。
-- `health: broken` → compile_commands.json 缺失。先走生成流程，不要先查询。
-- `health: invalid` → 项目定位失败，按 `caveats` 修正参数。
-
-## 第二步：生成 compile_commands.json
-
-`status.py` 输出的 `generate_compile_commands_command` 已根据实际引擎安装选好了
-UBT 调用形态。生成前向用户展示命令和预期输出位置，得到同意后执行。典型形态：
+也可以使用统一入口：
 
 ```powershell
-& "<EngineRoot>\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" -mode=GenerateClangDatabase -project="<Project.uproject>" -game -engine <Target> <Configuration> <Platform>
+python "<skill-root>/query.py" status --project "D:\work\TPSample\TPSample.uproject"
 ```
 
-注意事项：
+关注字段：
 
-- 部分 UE 版本把 `compile_commands.json` 写到 **Engine root 而不是 project root**。生成后重新运行 `status.py` 确认实际位置。
-- 如果输出不在项目根，优先在项目根写一个最小 `.clangd` 指向它（需用户同意），不要复制或建 symlink：
+- `expected_compile_commands_path`：固定为 `<ProjectRoot>\compile_commands.json`。
+- `compile_commands_location`：正常流程固定为 `project_root`。
+- `compile_commands_health`：`missing`、`malformed`、`empty`、`wrong-workspace`、`source-not-covered`、`stale` 或 `valid`。
+- `legacy_engine_compile_commands_path`：只报告，不使用、不修改。
+- `health`、`caveats`、`next_actions`：决定查询是否可信。
 
-```yaml
-CompileFlags:
-  CompilationDatabase: <compile_commands.json 所在目录>
-Index:
-  Background: Build
+`status.py` 输出的生成命令包含：
+
+```text
+-mode=GenerateClangDatabase
+-project="<Project.uproject>"
+-OutputDir="<ProjectRoot>"
 ```
 
-- 生成后 clangd 需要重启才会读取新数据库；宿主 LSP 客户端可能缓存旧会话，必要时提示用户重启 LSP 或 agent 会话。
-- 首次查询后 background index 需要时间构建，references 结果在此期间可能不完整。
+预期产物只能是 `<ProjectRoot>\compile_commands.json`。如果旧 UE 不支持 `-OutputDir`，应明确报告兼容问题并停止；不得静默回退到 Engine root。
 
-## 第三步：使用宿主内置 LSP
+compdb 刷新依据是 `.uproject`、`*.Build.cs`、`*.Target.cs`、translation unit 新增/删除，或请求的 `.cpp` 未覆盖。普通 `.cpp` 内容比 compdb 新不代表数据库过期。
 
-数据库就绪后，直接使用宿主 agent 暴露的 LSP 工具（diagnostics、definition、
-references、symbols 等）。不要自己起 clangd 进程与宿主竞争。
+## Managed clangd 查询
 
-高效用法：
+查询会自动启动项目服务；不必预先执行 `start`。服务状态位于：
 
-- 不确定 UE API 时，先 workspace symbol 搜候选，再 definition/hover 确认，不要猜引擎路径。
-- 编辑大文件前，先 document symbols 建立文件地图。
-- 修改后立即对改动文件跑 diagnostics。
-- LSP position 是 0-based 行列，从编辑器 1-based 转换时要小心。
+```text
+<ProjectRoot>\.ue-lsp\
+  server.json
+  server.log
+  clangd.log
+  cache\
+  lock
+```
 
-## 结果解读规则
+显式管理命令：
 
-### fallback 症状识别（最高优先级）
+```powershell
+python "<skill-root>/query.py" start --project "TPSample.uproject"
+python "<skill-root>/query.py" stop  --project "TPSample.uproject"
+```
 
-查询结果出现以下任一特征时，判定 clangd 处于 fallback 或配置损坏状态：
+`stop` 只通知当前项目 `server.json` 中带认证 token 的 managed server。compdb 或 clangd 发生变化时，下一次查询自动重启该项目服务。
 
-- diagnostics 第一条是标准头文件或 `CoreMinimal.h` 找不到
-- `UCLASS` / `UPROPERTY` / `UFUNCTION` / `GENERATED_BODY` 被报 `Unknown type name`
-- 错误数量爆炸直至 `too_many_errors`
+### Definition
 
-此时：停止信任本轮所有 LSP 结果，运行 `status.py` 诊断，走生成/修复流程。
-**绝不根据这些 diagnostics 修改业务代码。**
+```powershell
+python "<skill-root>/query.py" definition `
+  --project "TPSample.uproject" `
+  --file "Source/TPSample/Foo.cpp" `
+  --line 12 --column 8
+```
 
-### UHT 与 generated header
+### Hover
 
-涉及 `UCLASS`、`USTRUCT`、`UPROPERTY`、`UFUNCTION`、`GENERATED_BODY`、`.generated.h`
-的 diagnostics，即使 compdb 健康也要加 UHT caveat：generated header 可能过期或缺失。
-根因确认交给 UBT/UHT（运行 `ue-build`），不要只根据 clangd 修改 reflection 相关代码。
+```powershell
+python "<skill-root>/query.py" hover `
+  --project "TPSample.uproject" `
+  --file "Source/TPSample/Foo.h" `
+  --line 20 --column 10
+```
 
-### 可信度分级
+### References
 
-对外报告 LSP 结论时标注 confidence：
+```powershell
+python "<skill-root>/query.py" references `
+  --project "TPSample.uproject" `
+  --file "Source/TPSample/Foo.h" `
+  --line 20 --column 10 `
+  --exclude-declaration `
+  --wait-for-index --index-timeout 180
+```
 
-- **high**：compdb 健康 + 当前文件用真实 compile command 解析成功 + 精确符号命中。
-- **medium**：有结果但 index 可能未建完、header 的 compile command 是推断的、或 generated header 新鲜度不确定。
-- **low**：LSP 无结果只能靠文本搜索，或出现局部 include 失败。
-- **invalid**：无 compdb / clangd 未启动 / fallback 症状。此级别的结果不得作为修改代码的依据。
+### Implementation
 
-references 在 background index 构建期间必须 caveat "可能不完整"；
-workspace symbol 查不到但文本搜索能找到时，标记 low 并说明符号可能不在当前 target/module/index 中。
+```powershell
+python "<skill-root>/query.py" implementation `
+  --project "TPSample.uproject" `
+  --file "Source/TPSample/BenchSemanticAction.h" `
+  --line 19 --column 16 `
+  --wait-for-index
+```
 
-## 与 ue-build 的分工
+### Rename preview
 
-clangd 说"没问题"不等于 UBT 能编过；clangd 说"有问题"也不等于代码真的错了。
-需要权威结论（提交前验证、修复 UHT 问题、用户要求编译）时，运行 `ue-build`。
-本 skill 负责的是编译之间的快速、局部、带置信度的事实查询。
+```powershell
+python "<skill-root>/query.py" rename-preview `
+  --project "TPSample.uproject" `
+  --file "Source/TPSample/Foo.h" `
+  --line 20 --column 10 `
+  --new-name NewName `
+  --wait-for-index
+```
 
-## fallback 策略
+CLI 的 line/column 是 1-based，JSON 输出也是 1-based。`rename-preview` 不写文件：`files`/`workspace_edit` 只列出项目 `Source` 中的可操作预览；clangd 提议的 `Intermediate`、Engine 或 external edits 会列入 `excluded_files` 并标明 scope，避免误改生成文件。
 
-LSP 不可用或 confidence 为 low/invalid 时：
+## 索引完整性和置信度
 
-1. 对 project 和 Engine source 做文本搜索，结果报告为 hypothesis 而非 LSP 证明的事实。
-2. 生成/刷新 compile_commands.json（展示命令并获同意后）。
-3. reflection 相关问题用 `ue-build` 刷新 generated headers。
-4. API 或工具链行为查官方 Unreal / clangd 文档。
+- `index_state: ready` 才能把跨文件 references/implementation/rename 视为完成。
+- 索引未完成时，`possibly_incomplete=true`，confidence 最高为 `medium`。
+- 需要精确影响面时使用 `--wait-for-index`，并设置适合 UE 首次索引的 `--index-timeout`。
+- `high`：workspace compdb 有效、精确符号命中、需要的 background index 已 ready。
+- `medium`：有结果但索引未完成、header compile command 是推断的，或 generated header 新鲜度未由 UHT 确认。
+- `low`：只能依靠文本搜索或局部 include 失败。
+- `invalid`：compdb 缺失/损坏、clangd 不可用或 fallback 症状明显。
+
+## fallback 与 UHT caveat
+
+出现 `CoreMinimal.h not found`、`UCLASS`/`UPROPERTY`/`UFUNCTION`/`GENERATED_BODY` unknown、或 errors 爆炸到 `too_many_errors` 时，停止信任本轮 LSP 结果，重新检查 compdb。不要据此修改业务代码。
+
+`.generated.h` 通常位于 `Intermediate/Build/.../Inc/...`，不要求存在于源文件旁。涉及 reflection 的结论始终附加 UHT caveat，并用 `ue-build`/UBT/UHT 验证。
+
+## Telemetry
+
+如果 runner 给子进程设置 `UE_LSP_TRACE_PATH`，每次 query 会 best-effort 追加一条 JSONL。记录 operation、位置、结果数、index state、完整性、confidence、耗时和错误码，不记录源码内容。trace 写入失败不得影响查询。
+
+trace 是 skill 使用的可观测证据，但不是 agent 全部推理来源的绝对证明；报告中的 usage confidence 仍应标记为 partial 或 evidence-based-partial。

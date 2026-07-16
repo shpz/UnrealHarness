@@ -39,3 +39,4 @@ runner:
     - build.log
     - automation
     - verifier_result.json
+    - lsp-query-trace.jsonl

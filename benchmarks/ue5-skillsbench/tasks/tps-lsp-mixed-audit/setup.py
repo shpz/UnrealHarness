@@ -3,8 +3,8 @@
 1. Refuses to run if fixtures/answer key do not match certification.json
    (stale ground truth) or if the engine version differs from the certified one.
 2. Injects the five Bench fixture classes into the workspace project.
-3. Restores the trap condition: no compile database or .clangd anywhere
-   clangd could pick them up (project root and engine root).
+3. Restores the trap condition inside this trial workspace only. Shared Engine
+   state is never modified; project-local clangd configuration isolates it.
 """
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ import hashlib
 import json
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -29,43 +28,6 @@ def sha256(path: Path) -> str:
 def read_engine_association(uproject: Path) -> str | None:
     match = re.search(r'"EngineAssociation"\s*:\s*"([^"]+)"', uproject.read_text(encoding="utf-8"))
     return match.group(1) if match else None
-
-
-def resolve_engine_root(uproject: Path) -> Path | None:
-    association = read_engine_association(uproject)
-    if not association or sys.platform != "win32":
-        return None
-
-    if re.match(r"^\d+\.\d+", association):
-        key = rf"HKLM\SOFTWARE\EpicGames\Unreal Engine\{association}"
-        value_name = "InstalledDirectory"
-    else:
-        key = rf"HKCU\SOFTWARE\Epic Games\Unreal Engine\Builds\{association}"
-        value_name = "Path"
-
-    try:
-        result = subprocess.run(
-            ["reg", "query", key, "/v", value_name],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-
-    if result.returncode != 0:
-        return None
-
-    for line in result.stdout.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(value_name):
-            parts = re.split(r"\s+", stripped, maxsplit=2)
-            if len(parts) == 3:
-                candidate = Path(parts[2])
-                if candidate.exists():
-                    return candidate
-    return None
 
 
 def load_certification() -> dict[str, object]:
@@ -138,13 +100,6 @@ def main() -> int:
     removed: list[str] = []
     for name in ["compile_commands.json", ".clangd"]:
         remove_if_exists(project_path / name, removed)
-
-    engine_root = resolve_engine_root(uproject)
-    if engine_root is not None:
-        remove_if_exists(engine_root / "compile_commands.json", removed)
-        print(f"Engine root checked: {engine_root}")
-    else:
-        print("Warning: engine root could not be resolved; leftover engine-root compile_commands.json may defuse the trap", file=sys.stderr)
 
     print(f"Removed: {removed if removed else 'nothing (already clean)'}")
     return 0

@@ -22,5 +22,5 @@
 
 - `files` 必须覆盖上述 5 个类，每个类都给出 `has_code_errors` 判定。
 - 判定为 `true` 的类，必须同时给出 `error_symbol`（出错处涉及的符号名）和 `error_line`（.cpp 文件中的出错行号）。
-- `compile_commands_path` 必须是真实存在的文件路径。
+- `compile_commands_path` 必须是当前项目根目录下真实有效的 `compile_commands.json`；不要使用 Engine root 或其他项目的数据库。
 - 不要修改 `Source/` 或 `Config/` 目录下的任何文件。

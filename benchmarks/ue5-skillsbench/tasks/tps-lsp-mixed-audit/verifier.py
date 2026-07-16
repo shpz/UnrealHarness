@@ -16,6 +16,10 @@ import sys
 from pathlib import Path
 
 TASK_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(TASK_DIR.parent))
+
+from _lsp_task_support import validate_compile_database
+
 ANSWER_KEY_PATH = TASK_DIR / "answer_key.json"
 CERTIFICATION_PATH = TASK_DIR / "certification.json"
 
@@ -92,11 +96,26 @@ def main() -> int:
                 )
 
         compdb_raw = audit.get("compile_commands_path")
-        compdb_ok = isinstance(compdb_raw, str) and bool(compdb_raw) and Path(compdb_raw).exists()
+        compdb_ok = False
+        compdb_detail = f"compile_commands_path={compdb_raw!r}"
+        if isinstance(compdb_raw, str) and compdb_raw:
+            candidate = Path(compdb_raw)
+            if not candidate.is_absolute():
+                candidate = project_path / candidate
+            candidate = candidate.resolve()
+            expected = (project_path / "compile_commands.json").resolve()
+            if candidate == expected:
+                try:
+                    validate_compile_database(candidate, project_path.resolve())
+                    compdb_ok = True
+                except RuntimeError as exc:
+                    compdb_detail += f" invalid={exc}"
+            else:
+                compdb_detail += f" expected_workspace_path={expected}"
         record(
-            "compdb_exists",
+            "workspace_compdb_valid",
             compdb_ok,
-            f"compile_commands_path={compdb_raw!r} exists={compdb_ok}",
+            compdb_detail,
             "no-compdb",
         )
 
