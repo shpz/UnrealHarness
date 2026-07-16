@@ -1,0 +1,20 @@
+{
+    "target": "UBenchReferenceRouter::RouteEvent(const FName&)",
+    "references": [
+        {
+            "file": "Source/TPSample/BenchReferenceImpact/BenchReferenceCallSitesA.cpp",
+            "line": 7,
+            "kind": "call"
+        },
+        {
+            "file": "Source/TPSample/BenchReferenceImpact/BenchReferenceCallSitesB.cpp",
+            "line": 7,
+            "kind": "call"
+        },
+        {
+            "file": "Source/TPSample/BenchReferenceImpact/BenchReferenceMemberPointer.cpp",
+            "line": 7,
+            "kind": "address_of"
+        }
+    ]
+}

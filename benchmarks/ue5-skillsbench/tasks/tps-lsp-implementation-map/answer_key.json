@@ -1,0 +1,25 @@
+{
+    "interface": "IBenchSemanticAction",
+    "concrete_classes": {
+        "ABenchSharedActionActor": {
+            "provider_class": "ABenchSharedActionActor",
+            "class_header": "Source/TPSample/BenchImplementationMap/BenchSharedActionActor.h",
+            "implementation_file": "Source/TPSample/BenchImplementationMap/BenchSharedActionActor.cpp"
+        },
+        "ABenchDirectActionActor": {
+            "provider_class": "ABenchDirectActionActor",
+            "class_header": "Source/TPSample/BenchImplementationMap/BenchDirectActionActor.h",
+            "implementation_file": "Source/TPSample/BenchImplementationMap/BenchDirectActionActor.cpp"
+        },
+        "ABenchInheritedActionActor": {
+            "provider_class": "ABenchSharedActionActor",
+            "class_header": "Source/TPSample/BenchImplementationMap/BenchInheritedActionActor.h",
+            "implementation_file": "Source/TPSample/BenchImplementationMap/BenchSharedActionActor.cpp"
+        },
+        "ABenchOverrideActionActor": {
+            "provider_class": "ABenchOverrideActionActor",
+            "class_header": "Source/TPSample/BenchImplementationMap/BenchOverrideActionActor.h",
+            "implementation_file": "Source/TPSample/BenchImplementationMap/BenchOverrideActionActor.cpp"
+        }
+    }
+}

@@ -1,0 +1,10 @@
+id = "tps-lsp-reference-impact"
+project = "TPSample"
+timeout_minutes = 35
+primary_skills = ["ue-lsp"]
+
+[metadata]
+difficulty = "hard"
+category = "software-engineering"
+subcategory = "semantic-references"
+tags = ["unreal-engine", "ue5", "lsp", "clangd", "references", "impact-analysis", "overloads", "same-name-decoys"]

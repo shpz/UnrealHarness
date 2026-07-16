@@ -1,0 +1,10 @@
+id = "tps-lsp-implementation-map"
+project = "TPSample"
+timeout_minutes = 35
+primary_skills = ["ue-lsp"]
+
+[metadata]
+difficulty = "hard"
+category = "software-engineering"
+subcategory = "implementation-hierarchy"
+tags = ["unreal-engine", "ue5", "lsp", "clangd", "implementation", "type-hierarchy", "uinterface", "inheritance"]

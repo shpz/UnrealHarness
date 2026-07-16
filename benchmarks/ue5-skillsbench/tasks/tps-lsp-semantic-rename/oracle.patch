@@ -1,0 +1,55 @@
+diff --git a/Source/TPSample/BenchSemanticRename/BenchAbilityController.cpp b/Source/TPSample/BenchSemanticRename/BenchAbilityController.cpp
+index 2fc812a..8329700 100644
+--- a/Source/TPSample/BenchSemanticRename/BenchAbilityController.cpp
++++ b/Source/TPSample/BenchSemanticRename/BenchAbilityController.cpp
+@@ -4,5 +4,5 @@
+ 
+ bool ABenchAbilityController::ForwardAbility(UBenchAbilityRouter& Router, const FName& AbilityName) const
+ {
+-	return Router.TriggerAbility(AbilityName);
++	return Router.ActivateAbility(AbilityName);
+ }
+diff --git a/Source/TPSample/BenchSemanticRename/BenchAbilityConsumer.cpp b/Source/TPSample/BenchSemanticRename/BenchAbilityConsumer.cpp
+index 89de41c..7cd478a 100644
+--- a/Source/TPSample/BenchSemanticRename/BenchAbilityConsumer.cpp
++++ b/Source/TPSample/BenchSemanticRename/BenchAbilityConsumer.cpp
+@@ -4,5 +4,5 @@
+ 
+ bool UBenchAbilityConsumer::RequestAbility(UBenchAbilityRouter* Router, const FName& AbilityName) const
+ {
+-	return Router != nullptr && Router->TriggerAbility(AbilityName);
++	return Router != nullptr && Router->ActivateAbility(AbilityName);
+ }
+diff --git a/Source/TPSample/BenchSemanticRename/BenchAbilityRouter.cpp b/Source/TPSample/BenchSemanticRename/BenchAbilityRouter.cpp
+index 223b20d..02757b2 100644
+--- a/Source/TPSample/BenchSemanticRename/BenchAbilityRouter.cpp
++++ b/Source/TPSample/BenchSemanticRename/BenchAbilityRouter.cpp
+@@ -1,6 +1,6 @@
+ #include "BenchAbilityRouter.h"
+ 
+-bool UBenchAbilityRouter::TriggerAbility(const FName& AbilityName)
++bool UBenchAbilityRouter::ActivateAbility(const FName& AbilityName)
+ {
+ 	return !AbilityName.IsNone();
+ }
+diff --git a/Source/TPSample/BenchSemanticRename/BenchAbilityRouter.h b/Source/TPSample/BenchSemanticRename/BenchAbilityRouter.h
+index ee9a69a..08441dc 100644
+--- a/Source/TPSample/BenchSemanticRename/BenchAbilityRouter.h
++++ b/Source/TPSample/BenchSemanticRename/BenchAbilityRouter.h
+@@ -13,4 +13,4 @@ class TPSAMPLE_API UBenchAbilityRouter : public UActorComponent
+ public:
+ 	UFUNCTION(BlueprintCallable, Category="SkillsBench|Ability")
+-	bool TriggerAbility(const FName& AbilityName);
++	bool ActivateAbility(const FName& AbilityName);
+ };
+diff --git a/semantic_rename_report.json b/semantic_rename_report.json
+new file mode 100644
+index 0000000..b68990a
+--- /dev/null
++++ b/semantic_rename_report.json
+@@ -0,0 +1,5 @@
++{
++    "compile_commands_path": "compile_commands.json",
++    "old_symbol": "UBenchAbilityRouter::TriggerAbility",
++    "new_symbol": "UBenchAbilityRouter::ActivateAbility"
++}

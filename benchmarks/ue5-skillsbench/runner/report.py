@@ -64,7 +64,10 @@ def make_report(run_root: Path, run_id: str, output_dir: Path) -> dict:
             }
 
         no_skills = condition_summaries.get("no-skills")
-        skills_cond = condition_summaries.get("ue-build-only") or condition_summaries.get("all-ue-skills")
+        if task_id.startswith("tps-lsp-"):
+            skills_cond = condition_summaries.get("ue-lsp-only") or condition_summaries.get("all-ue-skills")
+        else:
+            skills_cond = condition_summaries.get("ue-build-only") or condition_summaries.get("all-ue-skills")
         delta_pp = None
         normalized_gain = None
         if no_skills and skills_cond:

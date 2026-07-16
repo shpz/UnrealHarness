@@ -1,0 +1,11 @@
+id = "tps-lsp-semantic-rename"
+project = "TPSample"
+timeout_minutes = 35
+primary_skills = ["ue-lsp"]
+secondary_skills = ["ue-build"]
+
+[metadata]
+difficulty = "hard"
+category = "software-engineering"
+subcategory = "semantic-rename"
+tags = ["unreal-engine", "ue5", "lsp", "clangd", "rename", "references", "generated-code", "same-name-decoys"]

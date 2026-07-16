@@ -1,0 +1,27 @@
+diff --git a/reference_impact.json b/reference_impact.json
+new file mode 100644
+index 0000000..df899a5
+--- /dev/null
++++ b/reference_impact.json
+@@ -0,0 +1,21 @@
++{
++    "compile_commands_path": "compile_commands.json",
++    "target": "UBenchReferenceRouter::RouteEvent(const FName&)",
++    "references": [
++        {
++            "file": "Source/TPSample/BenchReferenceImpact/BenchReferenceCallSitesA.cpp",
++            "line": 7,
++            "kind": "call"
++        },
++        {
++            "file": "Source/TPSample/BenchReferenceImpact/BenchReferenceCallSitesB.cpp",
++            "line": 7,
++            "kind": "call"
++        },
++        {
++            "file": "Source/TPSample/BenchReferenceImpact/BenchReferenceMemberPointer.cpp",
++            "line": 7,
++            "kind": "address_of"
++        }
++    ]
++}
